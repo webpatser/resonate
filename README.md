@@ -16,8 +16,8 @@ The wire protocol, REST API, and config schema are byte-compatible with Laravel 
 
 ```bash
 composer require webpatser/resonate
-php artisan reverb:install
-php artisan reverb:start
+php artisan resonate:install
+php artisan resonate:start
 ```
 
 ## Install (swap from `laravel/reverb`)
@@ -30,7 +30,7 @@ composer require webpatser/resonate
 That's it. Nothing else changes:
 
 - Same `config/reverb.php`. Resonate reads the existing file.
-- Same `reverb:start`, `reverb:restart`, `reverb:install` artisan commands.
+- New artisan commands: `resonate:start`, `resonate:restart`, `resonate:install`. Update supervisor / systemd / Docker entrypoints accordingly.
 - Same `laravel:reverb:restart` cache key. Running servers restart on the same signal.
 - Same Pusher wire protocol (byte-exact JSON framing) and the same Pusher-compatible REST API.
 - Supervisor / systemd / Docker configs stay as-is.

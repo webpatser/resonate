@@ -120,10 +120,10 @@ function pointAppAt(string $dir): void
     chdir($dir);
 }
 
-it('registers the reverb:install command on the artisan kernel', function () {
+it('registers the resonate:install command on the artisan kernel', function () {
     $commands = array_keys(app(Kernel::class)->all());
 
-    expect($commands)->toContain('reverb:install');
+    expect($commands)->toContain('resonate:install');
 });
 
 it('adds the Reverb environment variables to a fresh .env file', function () {
@@ -132,7 +132,7 @@ it('adds the Reverb environment variables to a fresh .env file', function () {
     try {
         pointAppAt($dir);
 
-        $exitCode = Artisan::call('reverb:install', [
+        $exitCode = Artisan::call('resonate:install', [
             '--no-interaction' => true,
         ]);
 
@@ -163,7 +163,7 @@ it('does not duplicate existing environment variables', function () {
     try {
         pointAppAt($dir);
 
-        Artisan::call('reverb:install', [
+        Artisan::call('resonate:install', [
             '--no-interaction' => true,
         ]);
 
@@ -184,7 +184,7 @@ it('adds the reverb connection block to config/broadcasting.php', function () {
     try {
         pointAppAt($dir);
 
-        Artisan::call('reverb:install', [
+        Artisan::call('resonate:install', [
             '--no-interaction' => true,
         ]);
 
@@ -206,7 +206,7 @@ it('uncomments the BroadcastServiceProvider when present in config/app.php', fun
     try {
         pointAppAt($dir);
 
-        Artisan::call('reverb:install', [
+        Artisan::call('resonate:install', [
             '--no-interaction' => true,
         ]);
 
@@ -236,7 +236,7 @@ PHP;
     try {
         pointAppAt($dir);
 
-        $exitCode = Artisan::call('reverb:install', [
+        $exitCode = Artisan::call('resonate:install', [
             '--no-interaction' => true,
         ]);
 
@@ -258,7 +258,7 @@ it('sets BROADCAST_CONNECTION to reverb when an existing value is present', func
     try {
         pointAppAt($dir);
 
-        Artisan::call('reverb:install', [
+        Artisan::call('resonate:install', [
             '--no-interaction' => true,
         ]);
 
@@ -277,7 +277,7 @@ it('reports a Resonate-branded success message', function () {
     try {
         pointAppAt($dir);
 
-        Artisan::call('reverb:install', [
+        Artisan::call('resonate:install', [
             '--no-interaction' => true,
         ]);
 

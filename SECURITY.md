@@ -35,7 +35,7 @@ When `apps.apps[].allowed_origins` does not contain `'*'`, every WebSocket upgra
 - `example.com` matches only `example.com`. It does not match subdomains.
 - `*.example.com` matches `sub.example.com` but **does not** match `example.com` itself.
 
-For production, list the explicit hosts you expect to serve. The default config ships `['*']` (permissive) so a fresh `reverb:install` works out of the box; tighten it.
+For production, list the explicit hosts you expect to serve. The default config ships `['*']` (permissive) so a fresh `resonate:install` works out of the box; tighten it.
 
 ### Horizontal scaling (Redis pub/sub)
 

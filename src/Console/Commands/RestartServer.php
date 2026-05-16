@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\InteractsWithTime;
 use Symfony\Component\Console\Attribute\AsCommand;
 
-#[AsCommand(name: 'reverb:restart')]
+#[AsCommand(name: 'resonate:restart')]
 class RestartServer extends Command
 {
     use InteractsWithTime;
@@ -17,7 +17,7 @@ class RestartServer extends Command
      *
      * @var string
      */
-    protected $signature = 'reverb:restart';
+    protected $signature = 'resonate:restart';
 
     /**
      * The console command description.

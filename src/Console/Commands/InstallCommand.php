@@ -10,7 +10,7 @@ use Symfony\Component\Console\Attribute\AsCommand;
 
 use function Laravel\Prompts\confirm;
 
-#[AsCommand(name: 'reverb:install')]
+#[AsCommand(name: 'resonate:install')]
 class InstallCommand extends Command
 {
     /**
@@ -18,7 +18,7 @@ class InstallCommand extends Command
      *
      * @var string
      */
-    protected $signature = 'reverb:install';
+    protected $signature = 'resonate:install';
 
     /**
      * The console command description.
@@ -38,7 +38,7 @@ class InstallCommand extends Command
         $this->enableBroadcasting();
         $this->updateBroadcastingDriver();
 
-        $this->components->info('Resonate installed. Run `php artisan reverb:start` to launch the server.');
+        $this->components->info('Resonate installed. Run `php artisan resonate:start` to launch the server.');
     }
 
     /**

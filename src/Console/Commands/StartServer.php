@@ -17,7 +17,7 @@ use Webpatser\Resonate\Scaling\Contracts\PubSubProvider;
 use Webpatser\Resonate\Server\Factory as ServerFactory;
 use Webpatser\Resonate\Server\HttpServer;
 
-#[AsCommand(name: 'reverb:start')]
+#[AsCommand(name: 'resonate:start')]
 class StartServer extends Command implements SignalableCommandInterface
 {
     /**
@@ -25,7 +25,7 @@ class StartServer extends Command implements SignalableCommandInterface
      *
      * @var string
      */
-    protected $signature = 'reverb:start
+    protected $signature = 'resonate:start
                 {--host= : The IP address the server should bind to}
                 {--port= : The port the server should listen on}
                 {--path= : The path the server should prefix to all routes}
