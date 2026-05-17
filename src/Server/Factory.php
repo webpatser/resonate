@@ -67,7 +67,12 @@ class Factory
             ),
         );
 
-        $bindContext = self::configureTls($options['tls'] ?? [], $hostname);
+        $bindContext = self::configureTls($options['tls'] ?? [], $hostname) ?? new BindContext;
+
+        // Always bind with SO_REUSEPORT so `resonate:reload` can spawn a second
+        // process on the same port; the kernel routes new accepts to it while
+        // the old process drains. With a single listener the flag is a no-op.
+        $bindContext = $bindContext->withReusePort();
 
         $socketServer->expose("{$host}:{$port}", $bindContext);
 

@@ -9,11 +9,12 @@ use Webpatser\Resonate\Server\Factory;
 use Webpatser\Resonate\Server\HttpServer;
 use Webpatser\Resonate\Server\WebSocketHandler;
 
-it('registers the resonate:start and resonate:restart commands', function () {
+it('registers the resonate:start, resonate:restart, and resonate:reload commands', function () {
     $commands = array_keys(app('Illuminate\Contracts\Console\Kernel')->all());
 
     expect($commands)->toContain('resonate:start')
-        ->and($commands)->toContain('resonate:restart');
+        ->and($commands)->toContain('resonate:restart')
+        ->and($commands)->toContain('resonate:reload');
 });
 
 it('resolves the pusher protocol stack from the container', function () {

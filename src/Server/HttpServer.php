@@ -2,6 +2,7 @@
 
 namespace Webpatser\Resonate\Server;
 
+use Closure;
 use Fledge\Async\Http\Server\DefaultErrorHandler;
 use Fledge\Async\Http\Server\ErrorHandler;
 use Fledge\Async\Http\Server\HttpServerStatus;
@@ -31,6 +32,11 @@ class HttpServer
      * @var array<int, callable>
      */
     protected array $onStop = [];
+
+    /**
+     * Whether a drain has already been initiated for this instance.
+     */
+    protected bool $draining = false;
 
     /**
      * Create a new HTTP server instance.
@@ -88,5 +94,52 @@ class HttpServer
         }
 
         EventLoop::queue(static fn () => EventLoop::getDriver()->stop());
+    }
+
+    /**
+     * Stop accepting new connections and let in-flight ones finish.
+     *
+     * Calling `SocketHttpServer::stop()` would also fire its `onStop`
+     * callbacks (the fledge-fiber Websocket server uses one to close every
+     * active client with code 1001 GOING_AWAY) and cancel the HTTP drivers
+     * mid-request, which is exactly what `stop()` does and what drain
+     * needs to avoid. Instead we reach into the vendor object and close just
+     * the listening server sockets so existing WebSocket and HTTP/1.1 keep-
+     * alive connections survive. A watchdog hard-stops the loop after
+     * `$timeout` seconds if clients refuse to disconnect.
+     */
+    public function drain(int $timeout): void
+    {
+        if ($this->draining) {
+            return;
+        }
+
+        if ($this->server->getStatus() !== HttpServerStatus::Started) {
+            return;
+        }
+
+        $this->draining = true;
+
+        $closeListeners = Closure::bind(function (): void {
+            foreach ($this->servers as $listener) {
+                $listener->close();
+            }
+
+            $this->servers = [];
+        }, $this->server, SocketHttpServer::class);
+
+        $closeListeners();
+
+        EventLoop::delay($timeout, function (): void {
+            try {
+                if ($this->server->getStatus() === HttpServerStatus::Started) {
+                    $this->server->stop();
+                }
+            } catch (Throwable $e) {
+                Log::error($e->getMessage());
+            } finally {
+                EventLoop::getDriver()->stop();
+            }
+        });
     }
 }

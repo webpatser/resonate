@@ -24,6 +24,13 @@ return [
     | Each server has its own configuration options that are defined in
     | the array below. You should ensure all the options are present.
     |
+    | `drain_timeout` is the upper bound (in seconds) the server waits for
+    | in-flight WebSocket connections to close after a `resonate:reload` or a
+    | SIGUSR2. The listener is always bound with SO_REUSEPORT so the
+    | replacement process can accept new connections during the swap; on
+    | Linux the kernel load-balances new accepts across both processes,
+    | which is why drain is graceful.
+    |
     */
 
     'servers' => [
@@ -38,6 +45,7 @@ return [
             ],
             'max_request_size' => env('REVERB_MAX_REQUEST_SIZE', 10_000),
             'auth_timestamp_grace' => env('REVERB_AUTH_TIMESTAMP_GRACE', 600),
+            'drain_timeout' => env('REVERB_DRAIN_TIMEOUT', 30),
             'scaling' => [
                 'enabled' => env('REVERB_SCALING_ENABLED', false),
                 'channel' => env('REVERB_SCALING_CHANNEL', 'reverb'),

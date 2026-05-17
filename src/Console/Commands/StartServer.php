@@ -4,10 +4,12 @@ namespace Webpatser\Resonate\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
+use Laravel\Pulse\Pulse;
+use Laravel\Telescope\Contracts\EntriesRepository;
+use Laravel\Telescope\Telescope;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\SignalableCommandInterface;
-use Throwable;
 use Webpatser\Resonate\Contracts\Logger;
 use Webpatser\Resonate\Contracts\ServerProvider;
 use Webpatser\Resonate\Jobs\PingInactiveConnections;
@@ -145,11 +147,11 @@ class StartServer extends Command implements SignalableCommandInterface
      */
     protected function ensurePulseEventsAreCollected(int $interval): void
     {
-        if (! class_exists(\Laravel\Pulse\Pulse::class) || ! $this->laravel->bound(\Laravel\Pulse\Pulse::class)) {
+        if (! class_exists(Pulse::class) || ! $this->laravel->bound(Pulse::class)) {
             return;
         }
 
-        EventLoop::repeat($interval, fn () => $this->laravel->make(\Laravel\Pulse\Pulse::class)->ingest());
+        EventLoop::repeat($interval, fn () => $this->laravel->make(Pulse::class)->ingest());
     }
 
     /**
@@ -158,16 +160,16 @@ class StartServer extends Command implements SignalableCommandInterface
     protected function ensureTelescopeEntriesAreCollected(int $interval): void
     {
         if (
-            ! class_exists(\Laravel\Telescope\Telescope::class)
-            || ! class_exists(\Laravel\Telescope\Contracts\EntriesRepository::class)
-            || ! $this->laravel->bound(\Laravel\Telescope\Contracts\EntriesRepository::class)
+            ! class_exists(Telescope::class)
+            || ! class_exists(EntriesRepository::class)
+            || ! $this->laravel->bound(EntriesRepository::class)
         ) {
             return;
         }
 
         EventLoop::repeat(
             $interval,
-            fn () => \Laravel\Telescope\Telescope::store($this->laravel->make(\Laravel\Telescope\Contracts\EntriesRepository::class)),
+            fn () => Telescope::store($this->laravel->make(EntriesRepository::class)),
         );
     }
 
@@ -179,7 +181,7 @@ class StartServer extends Command implements SignalableCommandInterface
     public function getSubscribedSignals(): array
     {
         if (! windows_os()) {
-            return [SIGINT, SIGTERM, SIGTSTP];
+            return [SIGINT, SIGTERM, SIGTSTP, SIGUSR2];
         }
 
         $this->handleSignalWindows();
@@ -189,9 +191,23 @@ class StartServer extends Command implements SignalableCommandInterface
 
     /**
      * Handle the signals sent to the server.
+     *
+     * SIGUSR2 triggers a graceful drain: stop accepting new connections, let
+     * in-flight ones finish, and exit after the configured drain timeout.
+     * All other handled signals fall back to the hard `stop()` path.
      */
     public function handleSignal(int $signal = 0, int|false $previousExitCode = 0): int|false
     {
+        if (defined('SIGUSR2') && $signal === SIGUSR2) {
+            $timeout = (int) ($this->laravel['config']['reverb.servers.reverb.drain_timeout'] ?? 30);
+
+            $this->components->info("Draining the server (timeout: {$timeout}s).");
+
+            $this->server?->drain($timeout);
+
+            return $previousExitCode;
+        }
+
         $this->components->info('Gracefully stopping the server.');
 
         $this->server?->stop();
@@ -247,12 +263,23 @@ class StartServer extends Command implements SignalableCommandInterface
 
     /**
      * Remove the PID file on shutdown.
+     *
+     * After a zero-downtime reload the new server has already rewritten
+     * `storage/resonate.pid` with its own PID; we must not clobber that when
+     * the old server finishes draining, so only unlink when the file still
+     * points at our own PID.
      */
     protected function removePidFile(): void
     {
         $path = static::pidFilePath();
 
-        if (file_exists($path) && ! is_link($path)) {
+        if (! file_exists($path) || is_link($path)) {
+            return;
+        }
+
+        $pidInFile = (int) @file_get_contents($path);
+
+        if ($pidInFile === getmypid()) {
             @unlink($path);
         }
     }

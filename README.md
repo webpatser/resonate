@@ -30,11 +30,27 @@ composer require webpatser/resonate
 That's it. Nothing else changes:
 
 - Same `config/reverb.php`. Resonate reads the existing file.
-- New artisan commands: `resonate:start`, `resonate:restart`, `resonate:install`. Update supervisor / systemd / Docker entrypoints accordingly.
+- New artisan commands: `resonate:start`, `resonate:restart`, `resonate:reload`, `resonate:install`. Update supervisor / systemd / Docker entrypoints accordingly.
 - Same `laravel:reverb:restart` cache key. Running servers restart on the same signal.
 - Same Pusher wire protocol (byte-exact JSON framing) and the same Pusher-compatible REST API.
 - Supervisor / systemd / Docker configs stay as-is.
 - Front-end Echo and `pusher-js` configs stay as-is.
+
+## Zero-downtime reload
+
+`resonate:restart` is the legacy hard restart: it sets the `laravel:reverb:restart` cache key, the running server picks it up within 5 seconds, calls `stop()`, and your supervisor respawns it. WebSocket connections drop; the listener is gone for the 0-5 second window between exit and respawn. Fine for development, rough for production deploys.
+
+`resonate:reload` is the production path. The listener is bound with `SO_REUSEPORT` so the new process can hold the port while the old one drains.
+
+```bash
+# Default: spawn a replacement, wait for /up, then drain the old PID.
+php artisan resonate:reload
+
+# Drain only (for systemd ExecReload=, Kubernetes preStop, Supervisor).
+php artisan resonate:reload --drain
+```
+
+Tune the drain window with `REVERB_DRAIN_TIMEOUT` (default `30` seconds). Existing WebSocket clients stay connected to the old process until they disconnect naturally or the timeout fires.
 
 ## Horizontal scaling
 

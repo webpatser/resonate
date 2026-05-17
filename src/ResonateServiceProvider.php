@@ -3,7 +3,10 @@
 namespace Webpatser\Resonate;
 
 use Illuminate\Support\ServiceProvider;
+use Laravel\Pulse\Pulse;
+use Livewire\LivewireManager;
 use Webpatser\Resonate\Console\Commands\InstallCommand;
+use Webpatser\Resonate\Console\Commands\ReloadServer;
 use Webpatser\Resonate\Console\Commands\RestartServer;
 use Webpatser\Resonate\Console\Commands\StartServer;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
@@ -15,6 +18,8 @@ use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\Managers\ArrayChannelConnectionManager;
 use Webpatser\Resonate\Protocols\Pusher\Managers\ArrayChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\MetricsHandler;
+use Webpatser\Resonate\Pulse\Livewire\Connections;
+use Webpatser\Resonate\Pulse\Livewire\Messages;
 use Webpatser\Resonate\Scaling\Contracts\PubSubIncomingMessageHandler;
 use Webpatser\Resonate\Scaling\Contracts\PubSubProvider;
 use Webpatser\Resonate\Scaling\PusherPubSubIncomingMessageHandler;
@@ -98,6 +103,7 @@ class ResonateServiceProvider extends ServiceProvider
             $this->commands([
                 StartServer::class,
                 RestartServer::class,
+                ReloadServer::class,
                 InstallCommand::class,
             ]);
 
@@ -120,15 +126,15 @@ class ResonateServiceProvider extends ServiceProvider
      */
     protected function registerPulseIntegration(): void
     {
-        if (! class_exists(\Laravel\Pulse\Pulse::class) || ! $this->app->bound(\Laravel\Pulse\Pulse::class)) {
+        if (! class_exists(Pulse::class) || ! $this->app->bound(Pulse::class)) {
             return;
         }
 
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'reverb');
 
-        $this->callAfterResolving('livewire', function (\Livewire\LivewireManager $livewire): void {
-            $livewire->component('reverb.connections', \Webpatser\Resonate\Pulse\Livewire\Connections::class);
-            $livewire->component('reverb.messages', \Webpatser\Resonate\Pulse\Livewire\Messages::class);
+        $this->callAfterResolving('livewire', function (LivewireManager $livewire): void {
+            $livewire->component('reverb.connections', Connections::class);
+            $livewire->component('reverb.messages', Messages::class);
         });
     }
 }
