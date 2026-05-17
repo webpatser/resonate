@@ -37,6 +37,7 @@ return [
                 'tls' => [],
             ],
             'max_request_size' => env('REVERB_MAX_REQUEST_SIZE', 10_000),
+            'auth_timestamp_grace' => env('REVERB_AUTH_TIMESTAMP_GRACE', 600),
             'scaling' => [
                 'enabled' => env('REVERB_SCALING_ENABLED', false),
                 'channel' => env('REVERB_SCALING_CHANNEL', 'reverb'),

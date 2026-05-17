@@ -161,6 +161,39 @@ abstract class Controller implements RequestHandler
         if (! is_string($authSignature) || ! hash_equals($signature, $authSignature)) {
             throw new HttpException(401, 'Authentication signature invalid.');
         }
+
+        $this->verifyTimestamp();
+    }
+
+    /**
+     * Reject expired or missing `auth_timestamp` values to bound the replay window.
+     *
+     * The Pusher canonical string already binds the timestamp into the HMAC, so
+     * a signed request cannot be re-signed at a later time, but the verifier
+     * never checks the timestamp itself. This closes that gap by rejecting any
+     * request whose timestamp is more than `auth_timestamp_grace` seconds out
+     * of sync. Set the config to `0` to disable the check (matches Reverb's
+     * pre-fix behaviour).
+     *
+     * @throws HttpException
+     */
+    protected function verifyTimestamp(): void
+    {
+        $grace = (int) config('reverb.servers.reverb.auth_timestamp_grace', 600);
+
+        if ($grace <= 0) {
+            return;
+        }
+
+        $timestamp = $this->query['auth_timestamp'] ?? null;
+
+        if (! is_string($timestamp) || ! ctype_digit($timestamp)) {
+            throw new HttpException(401, 'Authentication timestamp missing or invalid.');
+        }
+
+        if (abs(time() - (int) $timestamp) > $grace) {
+            throw new HttpException(401, 'Authentication timestamp out of range.');
+        }
     }
 
     /**

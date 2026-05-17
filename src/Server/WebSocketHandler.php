@@ -87,8 +87,11 @@ class WebSocketHandler implements WebsocketClientHandler
             }
         }
 
-        // Fallback: derive the key from the request path (/app/{appKey}).
-        if (preg_match('#/app/([^/?]+)#', $request->getUri()->getPath(), $matches)) {
+        // Fallback: derive the key from the request path (/app/{appKey}). The
+        // regex is anchored to the full path and caps the key at 128 chars so
+        // a proxy-injected prefix (e.g. `/foo/app/x`) cannot smuggle a key in,
+        // and an arbitrarily long path segment cannot exhaust the lookup.
+        if (preg_match('#^/app/([^/?]{1,128})$#', $request->getUri()->getPath(), $matches)) {
             return $matches[1];
         }
 

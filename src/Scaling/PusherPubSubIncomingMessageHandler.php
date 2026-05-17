@@ -2,7 +2,9 @@
 
 namespace Webpatser\Resonate\Scaling;
 
+use Throwable;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
+use Webpatser\Resonate\Loggers\Log;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\EventDispatcher;
 use Webpatser\Resonate\Protocols\Pusher\MetricsHandler;
@@ -35,37 +37,45 @@ class PusherPubSubIncomingMessageHandler implements PubSubIncomingMessageHandler
 
     /**
      * Handle an incoming message from the pub/sub provider.
+     *
+     * The receive loop must survive a malformed envelope: anything thrown from
+     * JSON decoding, application lookup, or dispatch is logged and swallowed
+     * so a single bad publisher cannot wedge the subscriber.
      */
     public function handle(string $payload): void
     {
-        $event = json_decode($payload, associative: true, flags: JSON_THROW_ON_ERROR);
+        try {
+            $event = json_decode($payload, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        $this->processEventListeners($event);
+            $this->processEventListeners($event);
 
-        $application = app(ApplicationProvider::class)->findById($event['application'] ?? '');
+            $application = app(ApplicationProvider::class)->findById($event['application'] ?? '');
 
-        $except = isset($event['socket_id'])
-            ? app(ChannelManager::class)->for($application)->findConnection($event['socket_id'])
-            : null;
+            $except = isset($event['socket_id'])
+                ? app(ChannelManager::class)->for($application)->findConnection($event['socket_id'])
+                : null;
 
-        match ($event['type'] ?? null) {
-            'message' => EventDispatcher::dispatchSynchronously(
-                $application,
-                $event['payload'],
-                $except?->connection()
-            ),
-            'metrics' => app(MetricsHandler::class)->publish([
-                'application' => $application,
-                'payload' => $event['payload'],
-            ]),
-            'terminate' => collect(app(ChannelManager::class)->for($application)->connections())
-                ->each(function ($connection) use ($event) {
-                    if ((string) $connection->data('user_id') === (string) $event['payload']['user_id']) {
-                        $connection->disconnect();
-                    }
-                }),
-            default => null,
-        };
+            match ($event['type'] ?? null) {
+                'message' => EventDispatcher::dispatchSynchronously(
+                    $application,
+                    $event['payload'],
+                    $except?->connection()
+                ),
+                'metrics' => app(MetricsHandler::class)->publish([
+                    'application' => $application,
+                    'payload' => $event['payload'],
+                ]),
+                'terminate' => collect(app(ChannelManager::class)->for($application)->connections())
+                    ->each(function ($connection) use ($event) {
+                        if ((string) $connection->data('user_id') === (string) $event['payload']['user_id']) {
+                            $connection->disconnect();
+                        }
+                    }),
+                default => null,
+            };
+        } catch (Throwable $e) {
+            Log::error('Pub/sub envelope dropped: '.$e->getMessage());
+        }
     }
 
     /**

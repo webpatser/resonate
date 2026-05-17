@@ -76,7 +76,7 @@ it('terminates every local connection matching the given user', function () {
 
     $response = (new UsersTerminateController)->handleRequest(signedTerminateRequest(
         '/apps/app-id/users/456/terminate_connections',
-        ['auth_key' => 'app-key', 'auth_timestamp' => '1700000000', 'auth_version' => '1.0'],
+        ['auth_key' => 'app-key', 'auth_timestamp' => (string) time(), 'auth_version' => '1.0'],
         ['appId' => 'app-id', 'userId' => '456'],
     ));
 
@@ -91,7 +91,7 @@ it('terminates nothing when no connection matches the user', function () {
 
     $response = (new UsersTerminateController)->handleRequest(signedTerminateRequest(
         '/apps/app-id/users/not-a-user/terminate_connections',
-        ['auth_key' => 'app-key', 'auth_timestamp' => '1700000000', 'auth_version' => '1.0'],
+        ['auth_key' => 'app-key', 'auth_timestamp' => (string) time(), 'auth_version' => '1.0'],
         ['appId' => 'app-id', 'userId' => 'not-a-user'],
     ));
 

@@ -193,3 +193,24 @@ it('ensures the "member_removed" event is only fired once', function () {
 
     $connectionOne->connection()->assertNothingReceived();
 });
+
+it('rejects a subscribe with tampered channel_data', function () {
+    $channel = new PresenceChannel('presence-test-channel');
+
+    // Compute auth bound to channel_data = '{"user_id":"1"}'.
+    $signedData = '{"user_id":"1"}';
+    $auth = validAuth($this->connection->id(), 'presence-test-channel', $signedData);
+
+    // Subscribe with different channel_data — the HMAC is bound to the original.
+    $channel->subscribe($this->connection, $auth, '{"user_id":"2"}');
+})->throws(ConnectionUnauthorized::class);
+
+it('rejects a subscribe with no channel_data when the HMAC was signed with channel_data', function () {
+    $channel = new PresenceChannel('presence-test-channel');
+
+    // Compute auth with channel_data, then submit subscribe with no data.
+    $signedData = '{"user_id":"1"}';
+    $auth = validAuth($this->connection->id(), 'presence-test-channel', $signedData);
+
+    $channel->subscribe($this->connection, $auth, null);
+})->throws(ConnectionUnauthorized::class);

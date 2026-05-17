@@ -13,6 +13,7 @@ use Webpatser\Resonate\Loggers\Log;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\Exceptions\ConnectionLimitExceeded;
 use Webpatser\Resonate\Protocols\Pusher\Exceptions\InvalidOrigin;
+use Webpatser\Resonate\Protocols\Pusher\Exceptions\MessageSizeExceeded;
 use Webpatser\Resonate\Protocols\Pusher\Exceptions\PusherException;
 use Webpatser\Resonate\Protocols\Pusher\Exceptions\RateLimitExceeded;
 
@@ -35,6 +36,8 @@ class Server
             $this->ensureWithinConnectionLimit($connection);
             $this->verifyOrigin($connection);
 
+            $this->channels->for($connection->app())->incrementConnectionCount();
+
             $connection->touch();
 
             $this->handler->handle($connection, 'pusher:connection_established');
@@ -50,13 +53,22 @@ class Server
      */
     public function message(Connection $from, string $message): void
     {
+        $maxSize = $from->app()->maxMessageSize();
+
+        if ($maxSize > 0 && strlen($message) > $maxSize) {
+            $this->error($from, new MessageSizeExceeded);
+
+            return;
+        }
+
         Log::info('Message Received', $from->id());
-        Log::message($message);
 
         $from->touch();
 
         try {
             $this->ensureWithinRateLimit($from);
+
+            Log::message($message);
 
             $event = json_decode($message, associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -103,9 +115,10 @@ class Server
      */
     public function close(Connection $connection): void
     {
-        $this->channels
-            ->for($connection->app())
-            ->unsubscribeFromAll($connection);
+        $scoped = $this->channels->for($connection->app());
+
+        $scoped->unsubscribeFromAll($connection);
+        $scoped->decrementConnectionCount();
 
         $connection->disconnect();
 
@@ -147,9 +160,9 @@ class Server
             return;
         }
 
-        $connections = $this->channels->for($connection->app())->connections();
+        $count = $this->channels->for($connection->app())->connectionCount();
 
-        if (count($connections) >= $connection->app()->maxConnections()) {
+        if ($count >= $connection->app()->maxConnections()) {
             throw new ConnectionLimitExceeded;
         }
     }
@@ -193,10 +206,16 @@ class Server
             return;
         }
 
-        $origin = parse_url($connection->origin(), PHP_URL_HOST);
+        $origin = parse_url((string) $connection->origin(), PHP_URL_HOST);
+
+        if (! is_string($origin) || $origin === '') {
+            throw new InvalidOrigin;
+        }
+
+        $origin = strtolower($origin);
 
         foreach ($allowedOrigins as $allowedOrigin) {
-            if (Str::is($allowedOrigin, $origin)) {
+            if (Str::is(strtolower((string) $allowedOrigin), $origin)) {
                 return;
             }
         }

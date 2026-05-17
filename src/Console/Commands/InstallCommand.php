@@ -39,6 +39,13 @@ class InstallCommand extends Command
         $this->updateBroadcastingDriver();
 
         $this->components->info('Resonate installed. Run `php artisan resonate:start` to launch the server.');
+
+        $this->components->warn(
+            'Before going to production, review the following defaults:'.PHP_EOL.
+            '  - Tighten `allowed_origins` in config/reverb.php (currently set to [\'*\']) to the hostnames you actually serve.'.PHP_EOL.
+            '  - Set REVERB_SERVER_HOST=127.0.0.1 in production when Resonate runs behind a reverse proxy, instead of binding 0.0.0.0.'.PHP_EOL.
+            '  - Rotate the generated REVERB_APP_SECRET for non-development environments; the value written above is suitable for local dev only.'
+        );
     }
 
     /**

@@ -26,6 +26,17 @@ class ArrayChannelManager implements ChannelManagerInterface
     protected $applications = [];
 
     /**
+     * Per-application open-connection counts keyed by application ID.
+     *
+     * Tracked independently of channel subscription so the connection
+     * limit covers connections that complete the WS handshake but never
+     * send a `pusher:subscribe`.
+     *
+     * @var array<string, int>
+     */
+    protected $connectionCounts = [];
+
+    /**
      * The application instance.
      *
      * @var Application
@@ -117,6 +128,34 @@ class ArrayChannelManager implements ChannelManagerInterface
     }
 
     /**
+     * Increment the open-connection counter for the current application.
+     */
+    public function incrementConnectionCount(): void
+    {
+        $id = $this->application->id();
+
+        $this->connectionCounts[$id] = ($this->connectionCounts[$id] ?? 0) + 1;
+    }
+
+    /**
+     * Decrement the open-connection counter for the current application.
+     */
+    public function decrementConnectionCount(): void
+    {
+        $id = $this->application->id();
+
+        $this->connectionCounts[$id] = max(0, ($this->connectionCounts[$id] ?? 0) - 1);
+    }
+
+    /**
+     * Get the number of open connections for the current application.
+     */
+    public function connectionCount(): int
+    {
+        return $this->connectionCounts[$this->application->id()] ?? 0;
+    }
+
+    /**
      * Unsubscribe from all channels.
      */
     public function unsubscribeFromAll(Connection $connection): void
@@ -169,6 +208,7 @@ class ArrayChannelManager implements ChannelManagerInterface
             ->all()
             ->each(function (Application $application) {
                 $this->applications[$application->id()] = [];
+                $this->connectionCounts[$application->id()] = 0;
             });
     }
 }

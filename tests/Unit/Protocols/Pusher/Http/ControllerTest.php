@@ -78,7 +78,7 @@ it('passes a request with a valid signature through to handle()', function () {
 
     $response = $controller->handleRequest(signedRequest('GET', '/apps/app-id/channels', [
         'auth_key' => 'app-key',
-        'auth_timestamp' => '1700000000',
+        'auth_timestamp' => (string) time(),
         'auth_version' => '1.0',
     ]));
 
@@ -92,7 +92,7 @@ it('signs a non-empty body with body_md5', function () {
 
     $response = $controller->handleRequest(signedRequest('POST', '/apps/app-id/events', [
         'auth_key' => 'app-key',
-        'auth_timestamp' => '1700000000',
+        'auth_timestamp' => (string) time(),
         'auth_version' => '1.0',
     ], $body));
 
@@ -102,7 +102,7 @@ it('signs a non-empty body with body_md5', function () {
 it('rejects a request with an invalid signature with 401', function () {
     $request = signedRequest('GET', '/apps/app-id/channels', [
         'auth_key' => 'app-key',
-        'auth_timestamp' => '1700000000',
+        'auth_timestamp' => (string) time(),
         'auth_version' => '1.0',
     ]);
 
@@ -137,4 +137,215 @@ it('returns 404 for an unknown application id', function () {
     $response = testController()->handleRequest($request);
 
     expect($response->getStatus())->toBe(404);
+});
+
+it('rejects a request whose auth_timestamp is older than the grace window', function () {
+    $stale = (string) (time() - 601);
+
+    $response = testController()->handleRequest(signedRequest('GET', '/apps/app-id/channels', [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => $stale,
+        'auth_version' => '1.0',
+    ]));
+
+    expect($response->getStatus())->toBe(401);
+});
+
+it('rejects a request whose auth_timestamp is too far in the future', function () {
+    $future = (string) (time() + 601);
+
+    $response = testController()->handleRequest(signedRequest('GET', '/apps/app-id/channels', [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => $future,
+        'auth_version' => '1.0',
+    ]));
+
+    expect($response->getStatus())->toBe(401);
+});
+
+it('rejects a request with no auth_timestamp', function () {
+    $response = testController()->handleRequest(signedRequest('GET', '/apps/app-id/channels', [
+        'auth_key' => 'app-key',
+        'auth_version' => '1.0',
+    ]));
+
+    expect($response->getStatus())->toBe(401);
+});
+
+it('rejects a request with a non-numeric auth_timestamp', function () {
+    $response = testController()->handleRequest(signedRequest('GET', '/apps/app-id/channels', [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => 'not-a-timestamp',
+        'auth_version' => '1.0',
+    ]));
+
+    expect($response->getStatus())->toBe(401);
+});
+
+it('accepts a request just inside the grace window', function () {
+    $almostStale = (string) (time() - 599);
+
+    $response = testController()->handleRequest(signedRequest('GET', '/apps/app-id/channels', [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => $almostStale,
+        'auth_version' => '1.0',
+    ]));
+
+    expect($response->getStatus())->toBe(200);
+});
+
+it('disables the timestamp check when grace is set to 0', function () {
+    config()->set('reverb.servers.reverb.auth_timestamp_grace', 0);
+
+    $response = testController()->handleRequest(signedRequest('GET', '/apps/app-id/channels', [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => '1700000000',
+        'auth_version' => '1.0',
+    ]));
+
+    expect($response->getStatus())->toBe(200);
+});
+
+it('rejects an auth_signature passed as an array', function () {
+    // Construct a URL where auth_signature is parsed as an array by PHP.
+    $query = http_build_query([
+        'auth_key' => 'app-key',
+        'auth_timestamp' => (string) time(),
+        'auth_version' => '1.0',
+    ]).'&auth_signature[]=x&auth_signature[]=y';
+
+    $request = new FledgeRequest(
+        Mockery::mock(Client::class),
+        'GET',
+        League\Uri\Http::new('http://localhost/apps/app-id/channels?'.$query),
+    );
+    $request->setAttribute(Router::class, ['appId' => 'app-id']);
+
+    $response = testController()->handleRequest($request);
+
+    expect($response->getStatus())->toBe(401);
+});
+
+it('rejects a request with no auth_signature', function () {
+    // Build a request that omits auth_signature entirely.
+    $request = new FledgeRequest(
+        Mockery::mock(Client::class),
+        'GET',
+        League\Uri\Http::new('http://localhost/apps/app-id/channels?auth_key=app-key&auth_timestamp='.time().'&auth_version=1.0'),
+    );
+    $request->setAttribute(Router::class, ['appId' => 'app-id']);
+
+    $response = testController()->handleRequest($request);
+
+    expect($response->getStatus())->toBe(401);
+});
+
+it('rejects a method substitution replay', function () {
+    // Sign a POST request, then replay the same query/signature against GET.
+    $signed = signedRequest('POST', '/apps/app-id/events', [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => (string) time(),
+        'auth_version' => '1.0',
+    ]);
+
+    $query = $signed->getUri()->getQuery();
+
+    $replay = new FledgeRequest(
+        Mockery::mock(Client::class),
+        'GET',
+        League\Uri\Http::new('http://localhost/apps/app-id/events?'.$query),
+    );
+    $replay->setAttribute(Router::class, ['appId' => 'app-id']);
+
+    $response = testController()->handleRequest($replay);
+
+    expect($response->getStatus())->toBe(401);
+});
+
+it('rejects a path substitution replay', function () {
+    // Sign a request for /apps/app-id/events, then replay the signature against /apps/app-id/channels.
+    $signed = signedRequest('GET', '/apps/app-id/events', [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => (string) time(),
+        'auth_version' => '1.0',
+    ]);
+
+    $query = $signed->getUri()->getQuery();
+
+    $replay = new FledgeRequest(
+        Mockery::mock(Client::class),
+        'GET',
+        League\Uri\Http::new('http://localhost/apps/app-id/channels?'.$query),
+    );
+    $replay->setAttribute(Router::class, ['appId' => 'app-id']);
+
+    $response = testController()->handleRequest($replay);
+
+    expect($response->getStatus())->toBe(401);
+});
+
+it('rejects body tampering after signing', function () {
+    // Sign a POST body, then swap the body but keep the signature/query.
+    $original = '{"foo":"a"}';
+    $signed = signedRequest('POST', '/apps/app-id/events', [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => (string) time(),
+        'auth_version' => '1.0',
+    ], $original);
+
+    $query = $signed->getUri()->getQuery();
+
+    $tampered = new FledgeRequest(
+        Mockery::mock(Client::class),
+        'POST',
+        League\Uri\Http::new('http://localhost/apps/app-id/events?'.$query),
+        [],
+        '{"foo":"b"}',
+    );
+    $tampered->setAttribute(Router::class, ['appId' => 'app-id']);
+
+    $response = testController()->handleRequest($tampered);
+
+    expect($response->getStatus())->toBe(401);
+});
+
+it('canonicalizes array query parameters as comma-joined values', function () {
+    // Compute signature with the canonical form `foo=a,b` as the controller does.
+    $params = [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => (string) time(),
+        'auth_version' => '1.0',
+        'foo' => 'a,b',
+    ];
+
+    ksort($params);
+
+    $pairs = [];
+    foreach ($params as $key => $value) {
+        $pairs[] = "{$key}={$value}";
+    }
+
+    $signature = hash_hmac(
+        'sha256',
+        implode("\n", ['GET', '/apps/app-id/channels', implode('&', $pairs)]),
+        'app-secret',
+    );
+
+    // Now construct the actual request with PHP-array-style query.
+    $query = 'auth_key=app-key'
+        .'&auth_timestamp='.$params['auth_timestamp']
+        .'&auth_version=1.0'
+        .'&foo[]=a&foo[]=b'
+        .'&auth_signature='.$signature;
+
+    $request = new FledgeRequest(
+        Mockery::mock(Client::class),
+        'GET',
+        League\Uri\Http::new('http://localhost/apps/app-id/channels?'.$query),
+    );
+    $request->setAttribute(Router::class, ['appId' => 'app-id']);
+
+    $response = testController()->handleRequest($request);
+
+    expect($response->getStatus())->toBe(200);
 });

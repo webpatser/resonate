@@ -23,6 +23,12 @@ if (! function_exists('signedChannelRequest')) {
      */
     function signedChannelRequest(string $method, string $path, array $query = [], string $body = '', array $routeParams = ['appId' => 'app-id']): FledgeRequest
     {
+        $query += [
+            'auth_key' => 'app-key',
+            'auth_timestamp' => (string) time(),
+            'auth_version' => '1.0',
+        ];
+
         $params = $query;
 
         if ($body !== '') {

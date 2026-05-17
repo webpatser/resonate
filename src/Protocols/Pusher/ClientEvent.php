@@ -43,36 +43,48 @@ class ClientEvent
             return;
         }
 
-        $rebroadcastEvent = $event;
+        // The Pusher protocol only permits client events on private-* and presence-* channels.
+        // This applies in both 'all' and 'members' modes — the difference between the modes is
+        // only how the membership claim is sourced, never whether the channel type is checked
+        // or whether the sender must be subscribed.
+        if (! Str::startsWith($event['channel'], ['private-', 'presence-'])) {
+            $connection->send(json_encode([
+                'event' => 'pusher:error',
+                'data' => json_encode([
+                    'code' => 4009,
+                    'message' => 'Client events are only allowed on private and presence channels.',
+                ]),
+            ]));
 
-        if ($acceptClientEventsFrom == 'members') {
-            $channel = app(ChannelManager::class)->find($event['channel']);
+            return;
+        }
 
-            $channelConnection = $channel?->find($connection);
+        $channel = app(ChannelManager::class)->find($event['channel']);
 
-            if (! $channelConnection) {
-                $connection->send(json_encode([
-                    'event' => 'pusher:error',
-                    'data' => json_encode([
-                        'code' => 4009,
-                        'message' => 'The client is not a member of the specified channel.',
-                    ]),
-                ]));
+        $channelConnection = $channel?->find($connection);
 
-                return;
-            }
+        if (! $channelConnection) {
+            $connection->send(json_encode([
+                'event' => 'pusher:error',
+                'data' => json_encode([
+                    'code' => 4009,
+                    'message' => 'The client is not a member of the specified channel.',
+                ]),
+            ]));
 
-            // Regenerate event payload, ensuring we only include the expected fields and the authenticated user_id...
-            $rebroadcastEvent = [
-                'event' => $event['event'],
-                'channel' => $event['channel'],
-                'data' => $event['data'] ?? null,
-            ];
+            return;
+        }
 
-            if ($userId = $channelConnection->data('user_id')) {
-                // Because public channels allow unauthenticated users, we may not have a user ID...
-                $rebroadcastEvent['user_id'] = $userId;
-            }
+        // Regenerate event payload, ensuring we only include the expected fields and the
+        // authenticated user_id (sender-supplied user_id is never echoed).
+        $rebroadcastEvent = [
+            'event' => $event['event'],
+            'channel' => $event['channel'],
+            'data' => $event['data'] ?? null,
+        ];
+
+        if ($userId = $channelConnection->data('user_id')) {
+            $rebroadcastEvent['user_id'] = $userId;
         }
 
         self::whisper(

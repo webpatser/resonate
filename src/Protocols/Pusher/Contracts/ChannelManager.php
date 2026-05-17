@@ -54,6 +54,21 @@ interface ChannelManager
     public function findConnection(string $socketId): ?ChannelConnection;
 
     /**
+     * Increment the open-connection counter for the current application.
+     */
+    public function incrementConnectionCount(): void;
+
+    /**
+     * Decrement the open-connection counter for the current application.
+     */
+    public function decrementConnectionCount(): void;
+
+    /**
+     * Get the number of open connections for the current application.
+     */
+    public function connectionCount(): int;
+
+    /**
      * Unsubscribe from all channels.
      */
     public function unsubscribeFromAll(Connection $connection): void;

@@ -24,18 +24,21 @@ Resonate is a Pusher-protocol WebSocket server. The security model is identical 
 ### Authentication
 
 - **WebSocket private/presence channels:** HMAC-SHA256 of `{socket_id}:{channel}[:{channel_data}]`, compared with `hash_equals`. Implementation: `src/Protocols/Pusher/Channels/Concerns/InteractsWithPrivateChannels.php`.
-- **HTTP REST API:** HMAC-SHA256 of `METHOD\nPATH\n<ksort'd query incl body_md5>`, compared with `hash_equals`. Implementation: `src/Protocols/Pusher/Http/Controllers/Controller.php`.
+- **HTTP REST API:** HMAC-SHA256 of `METHOD\nPATH\n<ksort'd query incl body_md5>`, compared with `hash_equals`. After the signature check passes, `auth_timestamp` is verified to be within `auth_timestamp_grace` seconds of the server clock (default `600`; set via `REVERB_AUTH_TIMESTAMP_GRACE`, or `0` to disable). Implementation: `src/Protocols/Pusher/Http/Controllers/Controller.php`.
 
-Both schemes match the Pusher protocol and the `pusher/pusher-php-server` SDK's signing.
+Both schemes match the Pusher protocol and the `pusher/pusher-php-server` SDK's signing. The timestamp window is a Resonate-side hardening Reverb does not enforce; clients that re-send historic signed requests for hours will be rejected. NTP drift between the broadcaster and Resonate matters when the grace is tightened.
 
 ### Origin verification
 
-When `apps.apps[].allowed_origins` does not contain `'*'`, every WebSocket upgrade is checked against the configured list with `Str::is($pattern, $host)` (fnmatch-style). Two patterns worth knowing:
+When `apps.apps[].allowed_origins` does not contain `'*'`, every WebSocket upgrade is checked against the configured list with `Str::is($pattern, $host)` (fnmatch-style). Both pattern and host are lowercased before matching, so `example.com` matches `EXAMPLE.com`. Three patterns worth knowing:
 
 - `example.com` matches only `example.com`. It does not match subdomains.
 - `*.example.com` matches `sub.example.com` but **does not** match `example.com` itself.
+- IDN hosts are not normalized. Configure the punycode form (`xn--exmple-cua.com`) and clients must send the same.
 
-For production, list the explicit hosts you expect to serve. The default config ships `['*']` (permissive) so a fresh `resonate:install` works out of the box; tighten it.
+A missing or empty `Origin` header is rejected when `*` is not in the allow-list.
+
+For production, list the explicit hosts you expect to serve. The default config ships `['*']` (permissive) so a fresh `resonate:install` works out of the box; tighten it. `resonate:install` emits a hardening reminder at the end of its run.
 
 ### Horizontal scaling (Redis pub/sub)
 
@@ -43,7 +46,7 @@ When `scaling.enabled` is true, multiple Resonate instances exchange broadcasts 
 
 The trust boundary is therefore Redis itself: deploy with `requirepass` (or ACL) and a private network. The Redis URL in `reverb.servers.reverb.scaling.server` is the only authentication.
 
-Envelopes are pure JSON. The `Application` is carried as its `app_id` string and re-resolved through `ApplicationProvider` on the receiving node; no `serialize()`/`unserialize()` of untrusted data is ever performed. Implementation: `src/Scaling/PusherPubSubIncomingMessageHandler.php`.
+Envelopes are pure JSON. The `Application` is carried as its `app_id` string and re-resolved through `ApplicationProvider` on the receiving node; no `serialize()`/`unserialize()` of untrusted data is ever performed. Malformed envelopes (bad JSON, missing fields, unknown app id, oversized payloads) are caught, logged via `Log::error`, and dropped without disrupting the receive loop. Implementation: `src/Scaling/PusherPubSubIncomingMessageHandler.php`.
 
 ### Logging
 
@@ -52,7 +55,7 @@ Envelopes are pure JSON. The `Application` is carried as its `app_id` string and
 - `data.auth` (private/presence channel auth tokens) → `[redacted]`
 - `data.channel_data` (presence user data, may contain PII) → `[redacted: presence channel_data]`
 
-Anything not in those two fields will still appear in the log; treat the log file with the access controls your other application logs already have.
+Anything not in those two fields will still appear in the log; treat the log file with the access controls your other application logs already have. Frame logging runs *after* the rate-limit check, so messages rejected by the limiter never reach the log.
 
 ### Rate limiting
 
@@ -60,7 +63,15 @@ Per-connection (`'reverb:message:'.$connection->id()`) and stored in the in-memo
 
 ### Connection limits
 
-`apps.apps[].max_connections` is enforced at `open()` time per application, per node. Set it for production deployments.
+`apps.apps[].max_connections` is enforced at `open()` time per application, per node. The limit counts open WebSocket connections (not just connections subscribed to a channel) so an unsubscribed client still occupies a slot. Set it for production deployments.
+
+### Message size
+
+`apps.apps[].max_message_size` (default `10_000` bytes) caps the size of any individual incoming WebSocket message. Oversized frames are rejected with pusher error code `4019` and never reach the logger, the rate limiter, or the JSON parser. Set to `0` for unlimited.
+
+### Client events
+
+The Pusher protocol restricts client events (`client-*`) to private and presence channels, and only allows subscribed clients to whisper. Resonate enforces both rules in `'members'` mode (default) AND in `'all'` mode; the only difference between the two is the source of the membership claim. A sender-supplied `user_id` in the event payload is overridden with the channel-authenticated value, never echoed.
 
 ### Out of scope
 

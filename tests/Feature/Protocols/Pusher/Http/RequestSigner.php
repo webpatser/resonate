@@ -51,7 +51,7 @@ class RequestSigner
     ): FledgeRequest {
         $query = [
             'auth_key' => 'app-key',
-            'auth_timestamp' => '1700000000',
+            'auth_timestamp' => (string) time(),
             'auth_version' => '1.0',
         ];
 
@@ -104,7 +104,7 @@ class RequestSigner
 
         $uri = 'http://localhost'.$path.'?'.http_build_query([
             'auth_key' => 'app-key',
-            'auth_timestamp' => '1700000000',
+            'auth_timestamp' => (string) time(),
             'auth_version' => '1.0',
         ]);
 

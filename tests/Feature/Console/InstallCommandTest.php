@@ -288,3 +288,54 @@ it('reports a Resonate-branded success message', function () {
         tearDownInstallSandbox($dir);
     }
 });
+
+it('runs to completion and prints the production hardening warning', function () {
+    // Finding #7 from the 2026-05-16 security audit: the install command used
+    // to end on a chirpy "installed!" line with no nudge that the shipped
+    // defaults are dev-grade. The warning here is the user-facing hardening
+    // checklist and must call out the three items operators most commonly
+    // miss: permissive origins, the bind address, and the generated secret.
+    $dir = bootInstallSandbox();
+
+    try {
+        pointAppAt($dir);
+
+        $exitCode = Artisan::call('resonate:install', [
+            '--no-interaction' => true,
+        ]);
+
+        expect($exitCode)->toBe(0);
+
+        $output = Artisan::output();
+
+        expect($output)->toContain('allowed_origins')
+            ->and($output)->toContain('REVERB_SERVER_HOST')
+            ->and($output)->toContain('REVERB_APP_SECRET');
+    } finally {
+        tearDownInstallSandbox($dir);
+    }
+});
+
+it('generates a non-empty REVERB_APP_SECRET when missing from .env', function () {
+    // The hardening warning above only matters if the install command is
+    // actually writing a secret in the first place. This guards the producer
+    // side: assert that the secret line exists and is non-empty after a fresh
+    // install against a .env that did not previously define one.
+    $dir = bootInstallSandbox();
+
+    try {
+        pointAppAt($dir);
+
+        Artisan::call('resonate:install', [
+            '--no-interaction' => true,
+        ]);
+
+        $env = File::get($dir.'/.env');
+
+        expect(preg_match('/^REVERB_APP_SECRET=(\S+)$/m', $env, $matches))->toBe(1)
+            ->and($matches[1])->not->toBe('')
+            ->and(strlen($matches[1]))->toBeGreaterThan(0);
+    } finally {
+        tearDownInstallSandbox($dir);
+    }
+});
