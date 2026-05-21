@@ -58,6 +58,33 @@ Set `REVERB_SCALING_ENABLED=true` along with your `REDIS_*` variables. Multiple 
 
 Resonate uses a **pure JSON** envelope for cross-node messages, with no `serialize()` on the wire. This means a cluster cannot run mixed Resonate and `laravel/reverb` nodes; migration is all-at-once.
 
+## Server-side plugins
+
+Resonate is a product-agnostic Pusher relay, but the fiber runtime makes it a natural host for stateful, server-side application logic - periodic timers, custom message types, connection bookkeeping - without a second process. The plugin API exposes that without coupling Resonate to any one product.
+
+A plugin implements `ServerPlugin` plus any of three capability interfaces:
+
+- **`MessageInterceptor`** - `onMessage(Connection, array $event): MessageDisposition`. Runs before the standard `pusher:` / `client-*` routing. Return `Handled` or `Rejected` to consume a custom event type, or `Relay` (the default for traffic you don't own) to leave ordinary Pusher messages untouched.
+- **`ConnectionLifecycle`** - `onOpen` / `onClose` / `onSubscribe`. Observe connection transitions to maintain your own registries.
+- **`TickScheduler`** - `ticks()` returns `[{interval, callback}]`. Each callback is scheduled on the event loop inside a fiber, so async DB/Redis calls suspend the fiber rather than blocking the loop.
+
+Plugins receive a `PluginContext` at `boot()` with `sendTo()`, `broadcast()` (scaling-aware), `terminate()`, and `connectionsOn()`. `broadcast()` and `connectionsOn()` take an `Application`, an app id string, or `null` for the sole configured app, and the context resolves one itself via `application()` / `applications()` - so a `TickScheduler` callback, which has no connection to derive an app from, can still broadcast. Per-connection state lives on the `Connection` via `setState()` / `state()`. Register plugin classes in `config/reverb.php`:
+
+```php
+'servers' => [
+    'reverb' => [
+        // ...
+        'plugins' => [
+            App\Resonate\ChatPlugin::class,
+        ],
+    ],
+],
+```
+
+Plugin classes are resolved through the container (so their dependencies inject), booted once at server start, and every hook call is exception-isolated - a misbehaving plugin can never break the core connection lifecycle.
+
+See [`docs/plugins.md`](docs/plugins.md) for a full setup walkthrough with a worked plugin.
+
 ## Requirements
 
 - PHP `^8.5`

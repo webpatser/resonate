@@ -32,6 +32,18 @@ abstract class Connection
     protected $usesControlFrames = false;
 
     /**
+     * Plugin-owned per-connection state.
+     *
+     * This is per-socket state that lives for the whole connection, unlike
+     * presence `channel_data` which lives on a per-channel ChannelConnection
+     * and is lost on unsubscribe. Plugins should namespace keys (e.g. `mg.*`)
+     * to avoid collisions when several plugins are loaded.
+     *
+     * @var array<string, mixed>
+     */
+    protected array $pluginState = [];
+
+    /**
      * Create a new connection instance.
      */
     public function __construct(protected WebSocketConnection $connection, protected Application $application, protected ?string $origin)
@@ -171,6 +183,46 @@ abstract class Connection
     public function setUsesControlFrames(bool $usesControlFrames = true): Connection
     {
         $this->usesControlFrames = $usesControlFrames;
+
+        return $this;
+    }
+
+    /**
+     * Set a plugin-owned state value on the connection.
+     */
+    public function setState(string $key, mixed $value): Connection
+    {
+        $this->pluginState[$key] = $value;
+
+        return $this;
+    }
+
+    /**
+     * Get a plugin-owned state value, or the whole state bag when no key is given.
+     */
+    public function state(?string $key = null, mixed $default = null): mixed
+    {
+        if ($key === null) {
+            return $this->pluginState;
+        }
+
+        return $this->pluginState[$key] ?? $default;
+    }
+
+    /**
+     * Determine whether a plugin-owned state key is set.
+     */
+    public function hasState(string $key): bool
+    {
+        return array_key_exists($key, $this->pluginState);
+    }
+
+    /**
+     * Remove a plugin-owned state value from the connection.
+     */
+    public function forgetState(string $key): Connection
+    {
+        unset($this->pluginState[$key]);
 
         return $this;
     }

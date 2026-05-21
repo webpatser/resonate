@@ -2,6 +2,35 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## v0.3.0 - 2026-05-21
+
+Server-side plugin API. Resonate stays a product-agnostic Pusher relay, but a host application can now load `ServerPlugin` classes into the server process to intercept messages, observe the connection lifecycle, and run periodic ticks on the event loop. Ordinary Pusher traffic is unaffected: when every plugin returns `Relay`, routing is byte-identical to before.
+
+### Added
+
+- `Webpatser\Resonate\Plugins` namespace: `ServerPlugin` marker contract plus the `MessageInterceptor`, `ConnectionLifecycle`, and `TickScheduler` capability interfaces.
+- `MessageDisposition` enum (`Handled` / `Rejected` / `Relay`) returned by interceptors.
+- `PluginManager` - capability-indexed registry; every fan-out call (`interceptMessage`, `notifyOpen/Close/Subscribe`, `boot`, `ticks`) is exception-isolated so a plugin error cannot break the core.
+- `PluginContext` - the API handed to plugins at boot: `sendTo()`, `broadcast()` (routes via `EventDispatcher` so it is scaling-aware), `terminate()`, `connectionsOn()`, plus `application()` / `applications()` so a `TickScheduler` callback (which has no connection to derive an app from) can still resolve an `Application`. `broadcast()` and `connectionsOn()` accept an `Application`, an app id string, or `null` for the sole configured app.
+- Per-connection plugin state bag on the `Connection` contract: `setState()`, `state()`, `hasState()`, `forgetState()` - per-socket state that outlives presence `channel_data`.
+- New config key `reverb.servers.reverb.plugins`, an array of `ServerPlugin` class names resolved through the container.
+- `Scheduler` (`Webpatser\Resonate\Scheduling\Scheduler`) - a thin layer over the Revolt event loop for the server's periodic tasks. Every task (`repeat()` / `delay()`) runs inside a fiber and is exception-isolated, named for logging, and cancellable (`cancel()` / `cancelAll()`).
+
+### Changed
+
+- `Server::message()` runs the interceptor chain after validation and before the `pusher:` / `client-*` split; `Server::open()` / `close()` and `EventHandler::afterSubscribe()` fire the lifecycle hooks.
+- A message a plugin marks `Handled` or `Rejected` no longer fires the `MessageReceived` event or logs `Message Handled`; both are now scoped to traffic the core actually routed (`Relay`).
+- `StartServer` registers all periodic work (restart poll, cyclic GC, connection maintenance, Pulse/Telescope ingest, plugin ticks) through the `Scheduler` instead of bare `EventLoop::repeat` calls, so every task is fiber-wrapped and exception-isolated, not only plugin ticks. Periodic tasks are cancelled when the server begins to drain or stop.
+
+### Tests
+
+- New `tests/Unit/Plugins/` suite (22 cases) plus the `tests/Fakes/FakeServerPlugin.php` reference plugin: relay/handled/rejected dispositions, lifecycle hook firing, throwing-plugin isolation (message, boot, and lifecycle paths), tick collection, connection state, `MessageReceived` scoping, `PluginContext` (`sendTo` / `broadcast` / `terminate` / `connectionsOn` / application resolution), and config-driven plugin registration.
+- New `tests/Unit/Scheduling/SchedulerTest.php` (6 cases) plus `tests/Fakes/RecordingLogger.php`: task registration / introspection, single and bulk cancellation, throwing-task isolation, and one-shot run-once semantics. Suite grows to 313 tests.
+
+### Docs
+
+- New `docs/plugins.md` - a full setup walkthrough with a worked plugin implementing all three capabilities.
+
 ## v0.2.0 - 2026-05-17
 
 Zero-downtime reload for CI/CD deployments. Existing `resonate:restart` (hard restart, drops connections, 0-5s listener gap) is unchanged; the new flow lets a replacement process take over the port via `SO_REUSEPORT` while the outgoing process finishes its in-flight WebSocket connections.

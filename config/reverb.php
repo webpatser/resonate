@@ -61,6 +61,15 @@ return [
             ],
             'pulse_ingest_interval' => env('REVERB_PULSE_INGEST_INTERVAL', 15),
             'telescope_ingest_interval' => env('REVERB_TELESCOPE_INGEST_INTERVAL', 15),
+
+            /*
+            | Server-side plugins. Each entry is the class name of a
+            | Webpatser\Resonate\Plugins\Contracts\ServerPlugin implementation.
+            | Plugins are resolved through the container, booted once at server
+            | start, and may intercept inbound messages, observe the connection
+            | lifecycle, and register periodic ticks on the event loop.
+            */
+            'plugins' => [],
         ],
 
     ],

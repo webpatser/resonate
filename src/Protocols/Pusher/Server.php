@@ -10,6 +10,8 @@ use Throwable;
 use Webpatser\Resonate\Contracts\Connection;
 use Webpatser\Resonate\Events\MessageReceived;
 use Webpatser\Resonate\Loggers\Log;
+use Webpatser\Resonate\Plugins\MessageDisposition;
+use Webpatser\Resonate\Plugins\PluginManager;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\Exceptions\ConnectionLimitExceeded;
 use Webpatser\Resonate\Protocols\Pusher\Exceptions\InvalidOrigin;
@@ -22,8 +24,11 @@ class Server
     /**
      * Create a new server instance.
      */
-    public function __construct(protected ChannelManager $channels, protected EventHandler $handler)
-    {
+    public function __construct(
+        protected ChannelManager $channels,
+        protected EventHandler $handler,
+        protected PluginManager $plugins,
+    ) {
         //
     }
 
@@ -43,6 +48,8 @@ class Server
             $this->handler->handle($connection, 'pusher:connection_established');
 
             Log::info('Connection Established', $connection->id());
+
+            $this->plugins->notifyOpen($connection);
         } catch (Exception $e) {
             $this->error($connection, $e);
         }
@@ -78,18 +85,26 @@ class Server
 
             Validator::make($event, ['event' => ['required', 'string']])->validate();
 
-            match (Str::startsWith($event['event'], 'pusher:')) {
-                true => $this->handler->handle(
-                    $from,
-                    $event['event'],
-                    empty($event['data']) ? [] : $event['data'],
-                ),
-                default => ClientEvent::handle($from, $event)
-            };
+            // Give the plugin layer first refusal on the message. A plugin that
+            // owns a custom event type returns Handled/Rejected to consume it;
+            // Relay (the default for non-plugin traffic) falls through to the
+            // standard Pusher / client-event routing untouched.
+            $disposition = $this->plugins->interceptMessage($from, $event);
 
-            Log::info('Message Handled', $from->id());
+            if ($disposition === MessageDisposition::Relay) {
+                match (Str::startsWith($event['event'], 'pusher:')) {
+                    true => $this->handler->handle(
+                        $from,
+                        $event['event'],
+                        empty($event['data']) ? [] : $event['data'],
+                    ),
+                    default => ClientEvent::handle($from, $event)
+                };
 
-            MessageReceived::dispatch($from, $message);
+                Log::info('Message Handled', $from->id());
+
+                MessageReceived::dispatch($from, $message);
+            }
         } catch (Throwable $e) {
             $this->error($from, $e);
         }
@@ -123,6 +138,8 @@ class Server
         $connection->disconnect();
 
         Log::info('Connection Closed', $connection->id());
+
+        $this->plugins->notifyClose($connection);
     }
 
     /**

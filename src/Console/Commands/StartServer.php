@@ -15,7 +15,9 @@ use Webpatser\Resonate\Contracts\ServerProvider;
 use Webpatser\Resonate\Jobs\PingInactiveConnections;
 use Webpatser\Resonate\Jobs\PruneStaleConnections;
 use Webpatser\Resonate\Loggers\CliLogger;
+use Webpatser\Resonate\Plugins\PluginManager;
 use Webpatser\Resonate\Scaling\Contracts\PubSubProvider;
+use Webpatser\Resonate\Scheduling\Scheduler;
 use Webpatser\Resonate\Server\Factory as ServerFactory;
 use Webpatser\Resonate\Server\HttpServer;
 
@@ -47,6 +49,11 @@ class StartServer extends Command implements SignalableCommandInterface
     protected ?HttpServer $server = null;
 
     /**
+     * The event-loop scheduler for the server's periodic tasks.
+     */
+    protected ?Scheduler $scheduler = null;
+
+    /**
      * Execute the console command.
      */
     public function handle(): void
@@ -67,9 +74,12 @@ class StartServer extends Command implements SignalableCommandInterface
             EventLoop::getDriver(),
         );
 
+        $this->scheduler = app(Scheduler::class);
+
         $this->ensureRestartCommandIsRespected($this->server, $host, $port);
         $this->ensureMemoryIsReclaimed();
         $this->ensureHorizontalScalability();
+        $this->ensurePluginsAreScheduled();
         $this->ensureStaleConnectionsAreCleaned();
         $this->ensurePulseEventsAreCollected($config['pulse_ingest_interval'] ?? 15);
         $this->ensureTelescopeEntriesAreCollected($config['telescope_ingest_interval'] ?? 15);
@@ -108,7 +118,7 @@ class StartServer extends Command implements SignalableCommandInterface
     {
         $lastRestart = Cache::get('laravel:reverb:restart');
 
-        EventLoop::repeat(5, function () use ($server, $host, $port, $lastRestart): void {
+        $this->scheduler->repeat(5, function () use ($server, $host, $port, $lastRestart): void {
             if ($lastRestart === Cache::get('laravel:reverb:restart')) {
                 return;
             }
@@ -116,7 +126,30 @@ class StartServer extends Command implements SignalableCommandInterface
             $this->components->info("Stopping server on {$host}:{$port}");
 
             $server->stop();
-        });
+        }, 'restart:poll');
+    }
+
+    /**
+     * Boot the server-side plugins and schedule their periodic ticks.
+     *
+     * Plugins are booted before `$server->start()` enters the loop. Each tick
+     * is handed to the `Scheduler`, which runs it inside a fiber and isolates
+     * any failure so it can never cancel the timer. When no plugins are
+     * configured this is a no-op.
+     */
+    protected function ensurePluginsAreScheduled(): void
+    {
+        $manager = app(PluginManager::class);
+
+        if (! $manager->hasPlugins()) {
+            return;
+        }
+
+        $manager->boot();
+
+        foreach ($manager->ticks() as $tick) {
+            $this->scheduler->repeat($tick['interval'], $tick['callback'], 'plugin:tick');
+        }
     }
 
     /**
@@ -128,7 +161,7 @@ class StartServer extends Command implements SignalableCommandInterface
      */
     protected function ensureMemoryIsReclaimed(): void
     {
-        EventLoop::repeat(30, static fn () => gc_collect_cycles());
+        $this->scheduler->repeat(30, static fn () => gc_collect_cycles(), 'memory:gc');
     }
 
     /**
@@ -136,10 +169,10 @@ class StartServer extends Command implements SignalableCommandInterface
      */
     protected function ensureStaleConnectionsAreCleaned(): void
     {
-        EventLoop::repeat(60, static function (): void {
+        $this->scheduler->repeat(60, static function (): void {
             PruneStaleConnections::dispatch();
             PingInactiveConnections::dispatch();
-        });
+        }, 'connections:maintenance');
     }
 
     /**
@@ -151,7 +184,7 @@ class StartServer extends Command implements SignalableCommandInterface
             return;
         }
 
-        EventLoop::repeat($interval, fn () => $this->laravel->make(Pulse::class)->ingest());
+        $this->scheduler->repeat($interval, fn () => $this->laravel->make(Pulse::class)->ingest(), 'pulse:ingest');
     }
 
     /**
@@ -167,9 +200,10 @@ class StartServer extends Command implements SignalableCommandInterface
             return;
         }
 
-        EventLoop::repeat(
+        $this->scheduler->repeat(
             $interval,
             fn () => Telescope::store($this->laravel->make(EntriesRepository::class)),
+            'telescope:ingest',
         );
     }
 
@@ -203,12 +237,16 @@ class StartServer extends Command implements SignalableCommandInterface
 
             $this->components->info("Draining the server (timeout: {$timeout}s).");
 
+            $this->scheduler?->cancelAll();
+
             $this->server?->drain($timeout);
 
             return $previousExitCode;
         }
 
         $this->components->info('Gracefully stopping the server.');
+
+        $this->scheduler?->cancelAll();
 
         $this->server?->stop();
 

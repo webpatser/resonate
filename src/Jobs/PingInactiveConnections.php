@@ -5,6 +5,7 @@ namespace Webpatser\Resonate\Jobs;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
 use Webpatser\Resonate\Loggers\Log;
+use Webpatser\Resonate\Plugins\PluginManager;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\EventHandler;
 
@@ -19,7 +20,7 @@ class PingInactiveConnections
     {
         Log::info('Pinging Inactive Connections');
 
-        $pusher = new EventHandler($channels);
+        $pusher = new EventHandler($channels, app(PluginManager::class));
 
         app(ApplicationProvider::class)
             ->all()

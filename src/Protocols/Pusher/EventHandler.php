@@ -6,6 +6,7 @@ use Exception;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Webpatser\Resonate\Contracts\Connection;
+use Webpatser\Resonate\Plugins\PluginManager;
 use Webpatser\Resonate\Protocols\Pusher\Channels\CacheChannel;
 use Webpatser\Resonate\Protocols\Pusher\Channels\Channel;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
@@ -15,8 +16,10 @@ class EventHandler
     /**
      * Create a new Pusher event instance.
      */
-    public function __construct(protected ChannelManager $channels)
-    {
+    public function __construct(
+        protected ChannelManager $channels,
+        protected PluginManager $plugins,
+    ) {
         //
     }
 
@@ -88,6 +91,8 @@ class EventHandler
             $channel instanceof CacheChannel => $this->sendCachedPayload($channel, $connection),
             default => null,
         };
+
+        $this->plugins->notifySubscribe($connection, $channel);
     }
 
     /**

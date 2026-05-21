@@ -13,6 +13,9 @@ use Webpatser\Resonate\Contracts\ApplicationProvider;
 use Webpatser\Resonate\Contracts\Logger;
 use Webpatser\Resonate\Contracts\ServerProvider;
 use Webpatser\Resonate\Loggers\NullLogger;
+use Webpatser\Resonate\Plugins\Contracts\ServerPlugin;
+use Webpatser\Resonate\Plugins\PluginContext;
+use Webpatser\Resonate\Plugins\PluginManager;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelConnectionManager;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\Managers\ArrayChannelConnectionManager;
@@ -25,6 +28,7 @@ use Webpatser\Resonate\Scaling\Contracts\PubSubProvider;
 use Webpatser\Resonate\Scaling\PusherPubSubIncomingMessageHandler;
 use Webpatser\Resonate\Scaling\RedisPubSubProvider;
 use Webpatser\Resonate\Scaling\ResonateServerProvider;
+use Webpatser\Resonate\Scheduling\Scheduler;
 
 class ResonateServiceProvider extends ServiceProvider
 {
@@ -55,7 +59,38 @@ class ResonateServiceProvider extends ServiceProvider
 
         $this->app->bind(ChannelConnectionManager::class, fn () => new ArrayChannelConnectionManager);
 
+        $this->app->singleton(Scheduler::class);
+
+        $this->registerPlugins();
+
         $this->registerScaling();
+    }
+
+    /**
+     * Register the server-side plugin layer.
+     *
+     * `PluginManager` is always bound (the message loop and connection
+     * lifecycle resolve it unconditionally); when no plugins are configured it
+     * is simply an empty, no-op fan-out. Plugin classes are resolved through
+     * the container so their own dependencies are injected.
+     */
+    protected function registerPlugins(): void
+    {
+        $this->app->singleton(PluginContext::class);
+
+        $this->app->singleton(PluginManager::class, function ($app) {
+            $manager = new PluginManager($app->make(PluginContext::class));
+
+            foreach ((array) config('reverb.servers.reverb.plugins', []) as $plugin) {
+                $resolved = $app->make($plugin);
+
+                if ($resolved instanceof ServerPlugin) {
+                    $manager->register($resolved);
+                }
+            }
+
+            return $manager;
+        });
     }
 
     /**

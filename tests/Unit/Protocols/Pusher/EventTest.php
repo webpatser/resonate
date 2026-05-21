@@ -1,12 +1,13 @@
 <?php
 
+use Webpatser\Resonate\Plugins\PluginManager;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\EventHandler as PusherEventHandler;
 use Webpatser\Resonate\Tests\Fakes\FakeConnection;
 
 beforeEach(function () {
     $this->connection = new FakeConnection;
-    $this->pusher = new PusherEventHandler(app(ChannelManager::class));
+    $this->pusher = new PusherEventHandler(app(ChannelManager::class), app(PluginManager::class));
 });
 
 it('can send an acknowledgement', function () {
