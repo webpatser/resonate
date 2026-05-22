@@ -2,6 +2,25 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## v0.4.0 - 2026-05-22
+
+Completes the plugin connection lifecycle. v0.3.0 shipped `onSubscribe` but no `onUnsubscribe`, and `PluginContext::connectionsOn()` (read) with no write-side counterpart. A plugin could see a connection join a channel but not leave one short of a full disconnect, and could not evict a connection from a single channel without terminating the whole socket. Both gaps are now closed.
+
+### Added
+
+- `ConnectionLifecycle::onUnsubscribe(Connection, Channel)` - fires when a connection leaves a channel via the explicit `pusher:unsubscribe` event.
+- `PluginManager::notifyUnsubscribe()` - exception-isolated fan-out for the new hook.
+- `PluginContext::unsubscribe(Connection, string $channel)` - removes a connection from one channel, leaving the socket and its other subscriptions intact. A direct action; it does not itself emit `onUnsubscribe`.
+
+### Changed
+
+- `ConnectionLifecycle` gains a fourth method, `onUnsubscribe`. Breaking for existing implementers of the interface; the plugin system is one release old, so the contract is completed before it settles.
+- `EventHandler::unsubscribe()` fires the `onUnsubscribe` lifecycle hook after removing the connection from the channel. A closing connection is still reported once through `onClose`, not as one unsubscribe per channel.
+
+### Tests
+
+- New `tests/Unit/Plugins/` cases: `onUnsubscribe` fires on `pusher:unsubscribe`, a throwing `onUnsubscribe` is isolated, a closing connection reports `onClose` and not `onUnsubscribe`, and `PluginContext::unsubscribe()` removes a connection from a channel without firing the hook. Suite grows to 317 tests.
+
 ## v0.3.0 - 2026-05-21
 
 Server-side plugin API. Resonate stays a product-agnostic Pusher relay, but a host application can now load `ServerPlugin` classes into the server process to intercept messages, observe the connection lifecycle, and run periodic ticks on the event loop. Ordinary Pusher traffic is unaffected: when every plugin returns `Relay`, routing is byte-identical to before.

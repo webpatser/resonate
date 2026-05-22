@@ -65,10 +65,10 @@ Resonate is a product-agnostic Pusher relay, but the fiber runtime makes it a na
 A plugin implements `ServerPlugin` plus any of three capability interfaces:
 
 - **`MessageInterceptor`** - `onMessage(Connection, array $event): MessageDisposition`. Runs before the standard `pusher:` / `client-*` routing. Return `Handled` or `Rejected` to consume a custom event type, or `Relay` (the default for traffic you don't own) to leave ordinary Pusher messages untouched.
-- **`ConnectionLifecycle`** - `onOpen` / `onClose` / `onSubscribe`. Observe connection transitions to maintain your own registries.
+- **`ConnectionLifecycle`** - `onOpen` / `onClose` / `onSubscribe` / `onUnsubscribe`. Observe connection transitions to maintain your own registries.
 - **`TickScheduler`** - `ticks()` returns `[{interval, callback}]`. Each callback is scheduled on the event loop inside a fiber, so async DB/Redis calls suspend the fiber rather than blocking the loop.
 
-Plugins receive a `PluginContext` at `boot()` with `sendTo()`, `broadcast()` (scaling-aware), `terminate()`, and `connectionsOn()`. `broadcast()` and `connectionsOn()` take an `Application`, an app id string, or `null` for the sole configured app, and the context resolves one itself via `application()` / `applications()` - so a `TickScheduler` callback, which has no connection to derive an app from, can still broadcast. Per-connection state lives on the `Connection` via `setState()` / `state()`. Register plugin classes in `config/reverb.php`:
+Plugins receive a `PluginContext` at `boot()` with `sendTo()`, `broadcast()` (scaling-aware), `terminate()`, `unsubscribe()`, and `connectionsOn()`. `broadcast()` and `connectionsOn()` take an `Application`, an app id string, or `null` for the sole configured app, and the context resolves one itself via `application()` / `applications()` - so a `TickScheduler` callback, which has no connection to derive an app from, can still broadcast. Per-connection state lives on the `Connection` via `setState()` / `state()`. Register plugin classes in `config/reverb.php`:
 
 ```php
 'servers' => [

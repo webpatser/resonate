@@ -78,6 +78,20 @@ class PluginContext
     }
 
     /**
+     * Remove a connection from a single channel on this node.
+     *
+     * A direct server-side action: unlike {@see terminate()} it leaves the
+     * socket open and the connection's other subscriptions intact. It does not
+     * itself emit `onUnsubscribe` - that hook reports client-driven
+     * `pusher:unsubscribe` events, mirroring how `onSubscribe` fires only from
+     * the protocol path.
+     */
+    public function unsubscribe(Connection $connection, string $channel): void
+    {
+        $this->channels->for($connection->app())->find($channel)?->unsubscribe($connection);
+    }
+
+    /**
      * Get the live connections subscribed to a channel on this node.
      *
      * `$app` accepts the same forms as {@see broadcast()}.

@@ -25,4 +25,11 @@ interface ConnectionLifecycle
      * Called after a connection successfully subscribes to a channel.
      */
     public function onSubscribe(Connection $connection, Channel $channel): void;
+
+    /**
+     * Called after a connection unsubscribes from a channel via the explicit
+     * `pusher:unsubscribe` event. A connection that closes is reported through
+     * {@see onClose()} instead, not as one unsubscribe per channel.
+     */
+    public function onUnsubscribe(Connection $connection, Channel $channel): void;
 }

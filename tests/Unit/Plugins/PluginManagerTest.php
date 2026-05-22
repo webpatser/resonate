@@ -19,6 +19,11 @@ $subscribe = json_encode([
     'data' => ['channel' => 'test-channel', 'auth' => ''],
 ]);
 
+$unsubscribe = json_encode([
+    'event' => 'pusher:unsubscribe',
+    'data' => ['channel' => 'test-channel'],
+]);
+
 it('relays ordinary pusher traffic when a plugin returns Relay', function () use ($subscribe) {
     app(PluginManager::class)->register(new FakeServerPlugin(MessageDisposition::Relay));
 
@@ -220,3 +225,49 @@ it('throws when resolving an application without an id on a multi-app server', f
 
     app(PluginContext::class)->application();
 })->throws(InvalidApplication::class);
+
+it('fires onUnsubscribe when a connection unsubscribes from a channel', function () use ($subscribe, $unsubscribe) {
+    $plugin = new FakeServerPlugin;
+    app(PluginManager::class)->register($plugin);
+
+    $this->server->message($connection = new FakeConnection, $subscribe);
+    $this->server->message($connection, $unsubscribe);
+
+    expect($plugin->unsubscribed)->toContain('test-channel');
+});
+
+it('isolates a throwing onUnsubscribe', function () use ($subscribe, $unsubscribe) {
+    app(PluginManager::class)->register(new FakeServerPlugin(throwOnUnsubscribe: true));
+    app(PluginManager::class)->register($healthy = new FakeServerPlugin);
+
+    $this->server->message($connection = new FakeConnection, $subscribe);
+    $this->server->message($connection, $unsubscribe);
+
+    expect($healthy->unsubscribed)->toContain('test-channel');
+});
+
+it('reports a closing connection as onClose, not onUnsubscribe', function () use ($subscribe) {
+    $plugin = new FakeServerPlugin;
+    app(PluginManager::class)->register($plugin);
+
+    $this->server->open($connection = new FakeConnection);
+    $this->server->message($connection, $subscribe);
+    $this->server->close($connection);
+
+    expect($plugin->closed)->toContain($connection->id())
+        ->and($plugin->unsubscribed)->toBeEmpty();
+});
+
+it('removes a connection from a channel through the plugin context without firing onUnsubscribe', function () use ($subscribe) {
+    $plugin = new FakeServerPlugin;
+    app(PluginManager::class)->register($plugin);
+
+    $this->server->message($connection = new FakeConnection, $subscribe);
+
+    expect(app(PluginContext::class)->connectionsOn(null, 'test-channel'))->toHaveCount(1);
+
+    app(PluginContext::class)->unsubscribe($connection, 'test-channel');
+
+    expect(app(PluginContext::class)->connectionsOn(null, 'test-channel'))->toBeEmpty()
+        ->and($plugin->unsubscribed)->toBeEmpty();
+});

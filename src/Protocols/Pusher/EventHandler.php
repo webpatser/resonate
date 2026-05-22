@@ -102,8 +102,15 @@ class EventHandler
     {
         $channel = $this->channels
             ->for($connection->app())
-            ->find($channel)
-            ?->unsubscribe($connection);
+            ->find($channel);
+
+        if ($channel === null) {
+            return;
+        }
+
+        $channel->unsubscribe($connection);
+
+        $this->plugins->notifyUnsubscribe($connection, $channel);
     }
 
     /**

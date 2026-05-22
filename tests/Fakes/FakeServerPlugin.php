@@ -31,6 +31,9 @@ class FakeServerPlugin implements ConnectionLifecycle, MessageInterceptor, Serve
     /** @var array<int, string> */
     public array $subscribed = [];
 
+    /** @var array<int, string> */
+    public array $unsubscribed = [];
+
     /** @var array<int, array<string, mixed>> */
     public array $messages = [];
 
@@ -41,6 +44,7 @@ class FakeServerPlugin implements ConnectionLifecycle, MessageInterceptor, Serve
         public bool $throwOnMessage = false,
         public bool $throwOnBoot = false,
         public bool $throwOnOpen = false,
+        public bool $throwOnUnsubscribe = false,
     ) {}
 
     public function boot(PluginContext $context): void
@@ -81,6 +85,15 @@ class FakeServerPlugin implements ConnectionLifecycle, MessageInterceptor, Serve
     public function onSubscribe(Connection $connection, Channel $channel): void
     {
         $this->subscribed[] = $channel->name();
+    }
+
+    public function onUnsubscribe(Connection $connection, Channel $channel): void
+    {
+        if ($this->throwOnUnsubscribe) {
+            throw new RuntimeException('boom');
+        }
+
+        $this->unsubscribed[] = $channel->name();
     }
 
     public function ticks(): array

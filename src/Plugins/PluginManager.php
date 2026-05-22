@@ -168,6 +168,20 @@ class PluginManager
     }
 
     /**
+     * Notify lifecycle plugins that a connection unsubscribed from a channel.
+     */
+    public function notifyUnsubscribe(Connection $connection, Channel $channel): void
+    {
+        foreach ($this->lifecycle as $plugin) {
+            try {
+                $plugin->onUnsubscribe($connection, $channel);
+            } catch (Throwable $e) {
+                Log::error('Plugin onUnsubscribe failed ('.$plugin::class.'): '.$e->getMessage());
+            }
+        }
+    }
+
+    /**
      * Collect every periodic tick registered by scheduler plugins.
      *
      * @return array<int, array{interval: float, callback: callable():void}>

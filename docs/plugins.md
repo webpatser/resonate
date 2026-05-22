@@ -36,6 +36,7 @@ interface ConnectionLifecycle
     public function onOpen(Connection $connection): void;
     public function onClose(Connection $connection): void;
     public function onSubscribe(Connection $connection, Channel $channel): void;
+    public function onUnsubscribe(Connection $connection, Channel $channel): void;
 }
 
 interface TickScheduler
@@ -124,6 +125,11 @@ class HeartbeatPlugin implements ConnectionLifecycle, MessageInterceptor, Server
         $this->log->info('subscribed', ['channel' => $channel->name()]);
     }
 
+    public function onUnsubscribe(Connection $connection, Channel $channel): void
+    {
+        $this->log->info('unsubscribed', ['channel' => $channel->name()]);
+    }
+
     public function ticks(): array
     {
         return [
@@ -176,6 +182,7 @@ Restart the server (`php artisan resonate:start`, or `resonate:reload` for a zer
 | `sendTo(Connection $c, string $event, array $data = [])` | Push one event to one connection. |
 | `broadcast($app, string $channel, string $event, array $data = [], ?Connection $except = null)` | Send to every connection on a channel. Routed through the event dispatcher, so with scaling enabled it reaches every node. |
 | `terminate(Connection $c, ?string $event = null, array $data = [])` | Optionally send a final event, then close the connection (local node only). |
+| `unsubscribe(Connection $c, string $channel)` | Remove a connection from one channel, leaving the socket and its other subscriptions intact. |
 | `connectionsOn($app, string $channel): array` | The live `ChannelConnection`s for a channel on this node. |
 | `application(?string $id = null): Application` | Resolve one application. |
 | `applications(): Collection` | Every configured application. |
@@ -211,6 +218,8 @@ Every plugin call - `boot()`, `onMessage()`, the lifecycle hooks, `ticks()`, and
 ## Notes and caveats
 
 - **Ticks are not re-entrant for you.** The loop fires the next tick on schedule whether or not the previous one finished. If a callback can outrun its interval, guard against overlap yourself (for example, a boolean "running" flag in plugin state).
+- **`onUnsubscribe` vs `onClose`.** `onUnsubscribe` fires for the explicit `pusher:unsubscribe` event - a connection leaving one channel while staying open. A connection that closes is reported once through `onClose`, not as one `onUnsubscribe` per channel. `PluginContext::unsubscribe()` is a direct server-side action and does not itself emit `onUnsubscribe`.
+- **Reading the presence `user_id`.** In `onSubscribe` / `onUnsubscribe` you get the `Connection` and the `Channel`. For a presence channel the subscribing user's id lives in the `ChannelConnection`: `$channel->connections()[$connection->id()]?->data('user_id')`.
 - **`terminate()` is local.** It only ends connections on the node that runs it. Cross-node termination needs a pub/sub envelope.
 - **Async work belongs in fibers.** Tick callbacks already run inside a fiber, so `await`-style suspending calls are fine. Do not call blocking I/O.
 - **Keep plugins product-specific in your app.** Resonate ships the contracts; the plugin classes live in your application, not in this package.
