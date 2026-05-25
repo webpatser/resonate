@@ -83,7 +83,26 @@ Plugins receive a `PluginContext` at `boot()` with `sendTo()`, `broadcast()` (sc
 
 Plugin classes are resolved through the container (so their dependencies inject), booted once at server start, and every hook call is exception-isolated - a misbehaving plugin can never break the core connection lifecycle.
 
-See [`docs/plugins.md`](docs/plugins.md) for a full setup walkthrough with a worked plugin.
+### First-party plugins
+
+A small family of plugins ships under `webpatser/*`. Pick the ones you need; each is opt-in, each has its own README with the full setup.
+
+| Package | What it does |
+|---------|--------------|
+| [`webpatser/resonate-roster`](https://github.com/webpatser/resonate-roster) | Cluster-wide presence and channel-occupancy state in Redis. Restart-safe, self-healing, queryable from the backend without a metrics round-trip. |
+| [`webpatser/resonate-webhooks`](https://github.com/webpatser/resonate-webhooks) | Pusher-style HTTP webhooks (`channel_occupied`/`channel_vacated`, `member_added`/`member_removed`, `client_event`). Signed, exactly-once per cluster via the roster. |
+| [`webpatser/resonate-user-cap`](https://github.com/webpatser/resonate-user-cap) | Per-user connection cap with cluster-correct enforcement. Terminates over-cap connections with a Pusher error frame. |
+| [`webpatser/resonate-token-auth`](https://github.com/webpatser/resonate-token-auth) | Token-based subscribe auth (JWT by default, pluggable). Lets mobile and S2S clients skip `/broadcasting/auth`. |
+| [`webpatser/resonate-delivery`](https://github.com/webpatser/resonate-delivery) | At-least-once message delivery within a retention window: every broadcast logged to a Redis Stream, replayed to reconnecting subscribers. |
+| [`webpatser/resonate-pulse`](https://github.com/webpatser/resonate-pulse) | Laravel Pulse cards for the suite: roster occupancy, webhook deliveries, user-cap terminations, token-auth rejections. |
+
+A companion Laravel-side package, **not** a Resonate plugin, that consumes the webhooks:
+
+| Package | What it does |
+|---------|--------------|
+| [`webpatser/resonate-channel-meter`](https://github.com/webpatser/resonate-channel-meter) | Records billable and observable channel occupancy periods from `resonate-webhooks` events as Eloquent models in your Laravel app. |
+
+See [`docs/plugins.md`](docs/plugins.md) for the same list with framing notes, plus a full setup walkthrough with a worked plugin you can build yourself.
 
 ## Requirements
 

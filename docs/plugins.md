@@ -14,6 +14,36 @@ Because the server runs on a fiber runtime, a plugin can do async DB or Redis wo
 
 If all you need is to broadcast from your app to clients, you do not need a plugin: use ordinary Laravel broadcasting. Plugins are for logic that has to live *inside* the socket server.
 
+## First-party plugins
+
+Before building your own, check whether one of these already does it. Each is a separate, opt-in `webpatser/*` package with its own README; install only what you need.
+
+### Inside the server (register in `config/reverb.php` `plugins`)
+
+| Package | Fast explainer |
+|---------|----------------|
+| [`webpatser/resonate-roster`](https://github.com/webpatser/resonate-roster) | Mirrors every presence (or all) channel into Redis so "who is online" survives restarts, stays cluster-correct, and is queryable from the backend. Self-healing per-node keys with TTL; works under scaling. |
+| [`webpatser/resonate-webhooks`](https://github.com/webpatser/resonate-webhooks) | Emits Pusher-style HTTP webhooks: `channel_occupied`, `channel_vacated`, `member_added`, `member_removed`, `client_event`. Signed; edges claimed exactly-once per cluster via the roster, so a scaled deployment never double-sends `occupied`. Coalesced async delivery off the connection path. |
+| [`webpatser/resonate-user-cap`](https://github.com/webpatser/resonate-user-cap) | Caps the cluster-wide connection count per presence `user_id`. Resonate's built-in `max_connections` caps per *app*; this caps per *user*. Over-cap connections get a Pusher error frame and close. |
+| [`webpatser/resonate-token-auth`](https://github.com/webpatser/resonate-token-auth) | Token-based subscribe auth (JWT default, pluggable authenticator + authorizer). Lets mobile and S2S clients skip the `/broadcasting/auth` HMAC round-trip. Coexists with standard HMAC; both flows work side by side on the same server. |
+| [`webpatser/resonate-delivery`](https://github.com/webpatser/resonate-delivery) | At-least-once message delivery within a bounded retention window. Logs every broadcast to a per-channel Redis Stream and replays missed messages to a reconnecting subscriber that supplies a `last_event_id`. Solves the universal "I dropped for 20s and missed messages" problem. |
+| [`webpatser/resonate-pulse`](https://github.com/webpatser/resonate-pulse) | Laravel Pulse cards visualizing the suite: roster occupancy, webhook delivery/failure throughput, user-cap terminations, token-auth rejections by reason. Recorders are opted in per plugin you have installed. |
+
+### Outside the server (Laravel-side webhook consumer)
+
+| Package | Fast explainer |
+|---------|----------------|
+| [`webpatser/resonate-channel-meter`](https://github.com/webpatser/resonate-channel-meter) | Receives `resonate-webhooks` deliveries in your Laravel app and writes channel occupancy periods as Eloquent records (`channel_meter_periods`, with a polymorphic `model` relation and a `HasChannelMeter` trait). Drop-in for billing or analytics that needs "how long was this chat occupied". |
+
+A few combinations earn their keep together:
+
+- **roster + webhooks + channel-meter** — push channel activity to the Laravel app and have it bill or audit channel sessions. The original *roster → webhooks → meter* arc.
+- **roster + webhooks + pulse** — see the whole cluster's behaviour on the Pulse dashboard. The pulse cards consume the events the webhooks plugin emits.
+- **token-auth + user-cap** — let mobile clients authenticate without cookies and cap their device fan-out.
+- **delivery + anything** — reconnect-replay is independent and pairs with every other plugin.
+
+For full setup, config, security notes, and protocol details, follow the link to each package's README. The rest of this document is for building your own plugin.
+
 ## The contracts
 
 Every plugin implements the `ServerPlugin` marker contract and any mix of three capability interfaces. They all live in `Webpatser\Resonate\Plugins\Contracts`.
