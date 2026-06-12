@@ -19,7 +19,7 @@ class EventsController extends Controller
      */
     protected function handle(Request $request, array $parameters): Response
     {
-        $payload = json_decode($this->body, associative: true, flags: JSON_THROW_ON_ERROR);
+        $payload = json_decode($request->getBody(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $validator = $this->validator($payload);
 
@@ -32,11 +32,11 @@ class EventsController extends Controller
         $except = null;
 
         if ($socketId = $payload['socket_id'] ?? null) {
-            $except = $this->channels->findConnection($socketId);
+            $except = $request->channels()->findConnection($socketId);
         }
 
         EventDispatcher::dispatch(
-            $this->application,
+            $request->application(),
             [
                 'event' => $payload['name'],
                 'channels' => $channels,
@@ -47,7 +47,7 @@ class EventsController extends Controller
 
         if (isset($payload['info'])) {
             $channels = app(MetricsHandler::class)->gather(
-                $this->application,
+                $request->application(),
                 'channels',
                 ['info' => $payload['info'], 'channels' => $channels],
             );

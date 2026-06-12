@@ -18,7 +18,7 @@ class EventsBatchController extends Controller
      */
     protected function handle(Request $request, array $parameters): Response
     {
-        $payload = json_decode($this->body, associative: true, flags: JSON_THROW_ON_ERROR);
+        $payload = json_decode($request->getBody(), associative: true, flags: JSON_THROW_ON_ERROR);
 
         $validator = $this->validator($payload);
 
@@ -26,21 +26,24 @@ class EventsBatchController extends Controller
             return Response::json($validator->errors(), 422);
         }
 
-        $items = collect($payload['batch'])->map(function ($item) {
+        $application = $request->application();
+        $channels = $request->channels();
+
+        $items = collect($payload['batch'])->map(function ($item) use ($application, $channels) {
             EventDispatcher::dispatch(
-                $this->application,
+                $application,
                 [
                     'event' => $item['name'],
                     'channel' => $item['channel'],
                     'data' => $item['data'],
                 ],
                 isset($item['socket_id'])
-                    ? $this->channels->findConnection($item['socket_id'])?->connection()
+                    ? $channels->findConnection($item['socket_id'])?->connection()
                     : null,
             );
 
             return isset($item['info']) ? app(MetricsHandler::class)->gather(
-                $this->application,
+                $application,
                 'channel',
                 ['channel' => $item['channel'], 'info' => $item['info']],
             ) : [];

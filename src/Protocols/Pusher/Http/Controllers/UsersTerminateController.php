@@ -26,12 +26,12 @@ class UsersTerminateController extends Controller
         if (app()->bound(ServerProvider::class) && app(ServerProvider::class)->subscribesToEvents()) {
             app(PubSubProvider::class)->publish([
                 'type' => 'terminate',
-                'application' => $this->application->id(),
+                'application' => $request->application()->id(),
                 'payload' => ['user_id' => $userId],
             ]);
         }
 
-        $connections = collect($this->channels->connections());
+        $connections = collect($request->channels()->connections());
 
         $connections->each(function ($connection) use ($userId) {
             if ((string) $connection->data('user_id') === $userId) {

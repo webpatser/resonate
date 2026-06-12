@@ -21,7 +21,7 @@ class ChannelUsersController extends Controller
      */
     protected function handle(Request $request, array $parameters): Response
     {
-        $channel = $this->channels->find($parameters['channel'] ?? '');
+        $channel = $request->channels()->find($parameters['channel'] ?? '');
 
         if (! $channel) {
             throw new HttpException(404, 'Channel not found.');
@@ -31,7 +31,7 @@ class ChannelUsersController extends Controller
             throw new HttpException(400, 'Users can only be retrieved for presence channels.');
         }
 
-        $users = app(MetricsHandler::class)->gather($this->application, 'channel_users', [
+        $users = app(MetricsHandler::class)->gather($request->application(), 'channel_users', [
             'channel' => $channel->name(),
         ]);
 

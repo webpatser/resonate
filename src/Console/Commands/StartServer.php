@@ -72,6 +72,7 @@ class StartServer extends Command implements SignalableCommandInterface
             $config['max_request_size'] ?? 10_000,
             $config['options'] ?? [],
             EventLoop::getDriver(),
+            $this->maxMessageSize(),
         );
 
         $this->scheduler = app(Scheduler::class);
@@ -93,6 +94,23 @@ class StartServer extends Command implements SignalableCommandInterface
         } finally {
             $this->removePidFile();
         }
+    }
+
+    /**
+     * Resolve the transport-level websocket message size limit.
+     *
+     * `max_message_size` is configured per app, but the websocket parser limit
+     * is a single global value. Use the largest configured app limit so a frame
+     * that is valid for any app is never rejected at the transport layer; the
+     * precise per-app limit is still enforced in Pusher\Server::message().
+     */
+    protected function maxMessageSize(): int
+    {
+        $sizes = collect($this->laravel['config']['reverb.apps.apps'] ?? [])
+            ->map(fn ($app) => (int) ($app['max_message_size'] ?? 0))
+            ->filter(fn (int $size) => $size > 0);
+
+        return $sizes->isEmpty() ? 10_000 : (int) $sizes->max();
     }
 
     /**

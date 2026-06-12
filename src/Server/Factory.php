@@ -8,7 +8,9 @@ use Fledge\Async\Http\Server\SocketHttpServer;
 use Fledge\Async\Stream\BindContext;
 use Fledge\Async\Stream\Certificate;
 use Fledge\Async\Stream\ServerTlsContext;
+use Fledge\Async\WebSocket\Parser\Rfc6455ParserFactory;
 use Fledge\Async\WebSocket\Server\Rfc6455Acceptor;
+use Fledge\Async\WebSocket\Server\Rfc6455ClientFactory;
 use Fledge\Async\WebSocket\Server\Websocket;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -48,6 +50,7 @@ class Factory
         int $maxRequestSize = 10_000,
         array $options = [],
         ?Driver $loop = null,
+        int $maxMessageSize = 10_000,
     ): HttpServer {
         if ($loop !== null) {
             EventLoop::setDriver($loop);
@@ -76,7 +79,7 @@ class Factory
 
         $socketServer->expose("{$host}:{$port}", $bindContext);
 
-        $router = self::makeRouter($path, $socketServer, $logger);
+        $router = self::makeRouter($path, $socketServer, $logger, $maxMessageSize);
 
         return new HttpServer($socketServer, $router, new DefaultErrorHandler);
     }
@@ -84,13 +87,28 @@ class Factory
     /**
      * Build the Resonate router with the WebSocket and health check routes.
      */
-    protected static function makeRouter(string $path, SocketHttpServer $socketServer, LoggerInterface $logger): Router
-    {
+    protected static function makeRouter(
+        string $path,
+        SocketHttpServer $socketServer,
+        LoggerInterface $logger,
+        int $maxMessageSize = 10_000,
+    ): Router {
         $router = new Router($path);
 
         $handler = new WebSocketHandler(
             app(PusherServer::class),
             app(ApplicationProvider::class),
+        );
+
+        // Bound buffered websocket messages at the parser level so an oversized
+        // frame is rejected (close code 1009, MESSAGE_TOO_LARGE) while it is
+        // still being buffered, rather than after the full message has been
+        // assembled in memory. Pusher\Server::message() keeps the precise
+        // per-app `max_message_size` check as well; this transport limit is the
+        // coarse safety net set to the largest configured app limit so a frame
+        // valid for any app is never rejected here, but unbounded buffering is.
+        $clientFactory = new Rfc6455ClientFactory(
+            parserFactory: new Rfc6455ParserFactory(messageSizeLimit: $maxMessageSize),
         );
 
         // The fledge-fiber Websocket request handler performs the RFC 6455
@@ -101,6 +119,7 @@ class Factory
             $logger,
             new Rfc6455Acceptor,
             $handler,
+            clientFactory: $clientFactory,
         );
 
         $router->get('/app/{appKey}', $websocket);

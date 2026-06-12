@@ -3,12 +3,19 @@
 namespace Webpatser\Resonate\Server;
 
 use Fledge\Async\Http\Server\Request as FledgeRequest;
+use Webpatser\Resonate\Application;
+use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 
 /**
  * Thin adapter around the fledge-fiber HTTP server Request.
  *
  * Exposes the subset of request data the Resonate HTTP controllers need
  * without leaking the underlying transport (or PSR-7) into the protocol layer.
+ *
+ * A fresh instance is created for every incoming request, so it is also the
+ * correct home for request-scoped state (the resolved application and its
+ * channel manager). Keeping that state here rather than on the singleton
+ * controllers prevents it bleeding across concurrent fiber-handled requests.
  */
 class Request
 {
@@ -23,6 +30,16 @@ class Request
      * The buffered request body.
      */
     protected ?string $body = null;
+
+    /**
+     * The application resolved for this request.
+     */
+    protected ?Application $application = null;
+
+    /**
+     * The channel manager scoped to this request's application.
+     */
+    protected ?ChannelManager $channels = null;
 
     /**
      * Create a new request adapter instance.
@@ -146,5 +163,37 @@ class Request
     public function origin(): ?string
     {
         return $this->request->getHeader('origin');
+    }
+
+    /**
+     * Get the application resolved for this request.
+     */
+    public function application(): ?Application
+    {
+        return $this->application;
+    }
+
+    /**
+     * Set the application resolved for this request.
+     */
+    public function setApplication(Application $application): void
+    {
+        $this->application = $application;
+    }
+
+    /**
+     * Get the channel manager scoped to this request's application.
+     */
+    public function channels(): ?ChannelManager
+    {
+        return $this->channels;
+    }
+
+    /**
+     * Set the channel manager scoped to this request's application.
+     */
+    public function setChannels(ChannelManager $channels): void
+    {
+        $this->channels = $channels;
     }
 }

@@ -15,9 +15,11 @@ class ChannelsController extends Controller
      */
     protected function handle(Request $request, array $parameters): Response
     {
-        $channels = app(MetricsHandler::class)->gather($this->application, 'channels', [
-            'filter' => $this->query['filter_by_prefix'] ?? null,
-            'info' => $this->query['info'] ?? null,
+        $query = $request->query();
+
+        $channels = app(MetricsHandler::class)->gather($request->application(), 'channels', [
+            'filter' => $query['filter_by_prefix'] ?? null,
+            'info' => $query['info'] ?? null,
         ]);
 
         return Response::json([

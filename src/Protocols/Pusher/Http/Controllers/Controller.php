@@ -8,7 +8,6 @@ use Fledge\Async\Http\Server\Response as FledgeResponse;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Throwable;
-use Webpatser\Resonate\Application;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
 use Webpatser\Resonate\Exceptions\InvalidApplication;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
@@ -31,28 +30,6 @@ use Webpatser\Resonate\Server\Router;
  */
 abstract class Controller implements RequestHandler
 {
-    /**
-     * Current application instance.
-     */
-    protected ?Application $application = null;
-
-    /**
-     * Active channels for the application.
-     */
-    protected ?ChannelManager $channels = null;
-
-    /**
-     * The incoming request's body.
-     */
-    protected ?string $body = null;
-
-    /**
-     * The incoming request's query parameters.
-     *
-     * @var array<string, mixed>
-     */
-    protected array $query = [];
-
     /**
      * Handle an incoming fledge-fiber HTTP request.
      */
@@ -92,38 +69,39 @@ abstract class Controller implements RequestHandler
      */
     protected function verify(Request $request, ?string $appId): void
     {
-        $this->body = $request->getBody();
-        $this->query = $request->query();
-
-        $this->setApplication($appId);
-        $this->setChannels();
+        // Request-scoped state lives on the per-request {@see Request} wrapper,
+        // never on the controller instance: the controllers are registered as
+        // singletons in the router, so any state stored on `$this` would bleed
+        // across concurrent fiber-handled requests (cross-app disclosure).
+        $this->setApplication($request, $appId);
+        $this->setChannels($request);
         $this->verifySignature($request);
     }
 
     /**
-     * Set the application instance for the incoming request's application ID.
+     * Resolve the application for the request's application ID onto the request.
      *
      * @throws HttpException
      */
-    protected function setApplication(?string $appId): Application
+    protected function setApplication(Request $request, ?string $appId): void
     {
         if (! $appId) {
             throw new HttpException(400, 'Application ID not provided.');
         }
 
         try {
-            return $this->application = app(ApplicationProvider::class)->findById($appId);
+            $request->setApplication(app(ApplicationProvider::class)->findById($appId));
         } catch (InvalidApplication) {
             throw new HttpException(404, 'No matching application for ID ['.$appId.'].');
         }
     }
 
     /**
-     * Set the channel manager instance for the application.
+     * Resolve the channel manager for the request's application onto the request.
      */
-    protected function setChannels(): void
+    protected function setChannels(Request $request): void
     {
-        $this->channels = app(ChannelManager::class)->for($this->application);
+        $request->setChannels(app(ChannelManager::class)->for($request->application()));
     }
 
     /**
@@ -133,12 +111,15 @@ abstract class Controller implements RequestHandler
      */
     protected function verifySignature(Request $request): void
     {
-        $params = Arr::except($this->query, [
+        $query = $request->query();
+        $body = $request->getBody();
+
+        $params = Arr::except($query, [
             'auth_signature', 'body_md5', 'appId', 'appKey', 'channelName',
         ]);
 
-        if ($this->body !== '') {
-            $params['body_md5'] = md5($this->body);
+        if ($body !== '') {
+            $params['body_md5'] = md5($body);
         }
 
         ksort($params);
@@ -155,14 +136,14 @@ abstract class Controller implements RequestHandler
             $this->formatQueryParametersForVerification($params),
         ]);
 
-        $signature = hash_hmac('sha256', $signature, $this->application->secret());
-        $authSignature = $this->query['auth_signature'] ?? '';
+        $signature = hash_hmac('sha256', $signature, $request->application()->secret());
+        $authSignature = $query['auth_signature'] ?? '';
 
         if (! is_string($authSignature) || ! hash_equals($signature, $authSignature)) {
             throw new HttpException(401, 'Authentication signature invalid.');
         }
 
-        $this->verifyTimestamp();
+        $this->verifyTimestamp($request);
     }
 
     /**
@@ -177,7 +158,7 @@ abstract class Controller implements RequestHandler
      *
      * @throws HttpException
      */
-    protected function verifyTimestamp(): void
+    protected function verifyTimestamp(Request $request): void
     {
         $grace = (int) config('reverb.servers.reverb.auth_timestamp_grace', 600);
 
@@ -185,7 +166,7 @@ abstract class Controller implements RequestHandler
             return;
         }
 
-        $timestamp = $this->query['auth_timestamp'] ?? null;
+        $timestamp = $request->query()['auth_timestamp'] ?? null;
 
         if (! is_string($timestamp) || ! ctype_digit($timestamp)) {
             throw new HttpException(401, 'Authentication timestamp missing or invalid.');

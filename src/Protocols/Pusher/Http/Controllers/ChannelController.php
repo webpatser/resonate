@@ -15,9 +15,11 @@ class ChannelController extends Controller
      */
     protected function handle(Request $request, array $parameters): Response
     {
-        $channel = app(MetricsHandler::class)->gather($this->application, 'channel', [
+        $query = $request->query();
+
+        $channel = app(MetricsHandler::class)->gather($request->application(), 'channel', [
             'channel' => $parameters['channel'] ?? '',
-            'info' => isset($this->query['info']) ? $this->query['info'].',occupied' : 'occupied',
+            'info' => isset($query['info']) ? $query['info'].',occupied' : 'occupied',
         ]);
 
         return Response::json((object) $channel);
