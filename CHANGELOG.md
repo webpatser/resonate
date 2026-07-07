@@ -2,6 +2,28 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## v0.4.1 - 2026-07-07
+
+Security and correctness release. Both fixes matter for multi-app and multi-node deployments.
+
+### Security
+
+- Isolated per-request controller state. The Pusher REST controllers are router singletons, but the base controller stored request-scoped state (application, channels, body, query) on instance properties; under concurrent fiber-handled requests that state could bleed across requests for different applications, a cross-app disclosure risk. The resolved application and channel manager now live on the per-request `Request` wrapper and are threaded through `verify()`, `verifySignature()` and `verifyTimestamp()`.
+- Enforced the configured `max_message_size` at the websocket parser level (`Rfc6455ParserFactory(messageSizeLimit:)`), so oversized frames are rejected with close code 1009 during buffering instead of after full message assembly. The precise per-app check in `Pusher\Server::message()` is retained.
+
+### Fixed
+
+- `toOthers` now works across servers. When an HTTP API event carried a `socket_id` belonging to a connection on another node, the local connection lookup returned null and the `socket_id` was dropped from the pub/sub envelope, so other nodes echoed the event back to the sender. `EventDispatcher::dispatch()` accepts the raw socket id and carries it into the envelope regardless of local resolvability. Mirrors laravel/reverb #389.
+
+### Changed
+
+- Dependencies refreshed: `webpatser/fledge-fiber` v13.19.0.1, verified against Laravel 13.19.0.
+
+### Tests
+
+- New `ControllerStateIsolationTest` covering the structural guarantee, request wrapper isolation, and fresh app resolution on a reused controller instance.
+- Four new cases in `EventDispatcherScalingTest`: explicit socket id in the envelope, local connection id fallback, and cross-server `toOthers` regression coverage for single and batch HTTP events. Suite grows to 324 tests.
+
 ## v0.4.0 - 2026-05-22
 
 Completes the plugin connection lifecycle. v0.3.0 shipped `onSubscribe` but no `onUnsubscribe`, and `PluginContext::connectionsOn()` (read) with no write-side counterpart. A plugin could see a connection join a channel but not leave one short of a full disconnect, and could not evict a connection from a single channel without terminating the whole socket. Both gaps are now closed.

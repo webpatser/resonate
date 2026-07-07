@@ -3,7 +3,11 @@
 use Webpatser\Resonate\Contracts\ApplicationProvider;
 use Webpatser\Resonate\Contracts\ServerProvider;
 use Webpatser\Resonate\Protocols\Pusher\EventDispatcher;
+use Webpatser\Resonate\Protocols\Pusher\Http\Controllers\EventsBatchController;
+use Webpatser\Resonate\Protocols\Pusher\Http\Controllers\EventsController;
 use Webpatser\Resonate\Scaling\Contracts\PubSubProvider;
+use Webpatser\Resonate\Tests\Fakes\FakeConnection;
+use Webpatser\Resonate\Tests\Feature\Protocols\Pusher\Http\RequestSigner;
 
 /**
  * A pub/sub provider that records every published envelope.
@@ -95,6 +99,56 @@ it('carries the application as its id string, not a serialized blob', function (
     // The whole envelope round-trips through JSON cleanly.
     $json = json_encode($envelope, JSON_THROW_ON_ERROR);
     expect(json_decode($json, true))->toBe($envelope);
+});
+
+it('carries an explicit socket id in the envelope when the excluded connection is not local', function () {
+    EventDispatcher::dispatch($this->application, [
+        'channel' => 'test-channel',
+        'event' => 'x',
+        'data' => [],
+    ], null, '123.456');
+
+    expect($this->pubSub->published[0]['socket_id'])->toBe('123.456');
+});
+
+it('falls back to the local connection id when no explicit socket id is given', function () {
+    $connection = new FakeConnection;
+
+    EventDispatcher::dispatch($this->application, [
+        'channel' => 'test-channel',
+        'event' => 'x',
+        'data' => [],
+    ], $connection);
+
+    expect($this->pubSub->published[0]['socket_id'])->toBe($connection->id());
+});
+
+it('keeps toOthers working across servers for HTTP events', function () {
+    $response = (new EventsController)->handleRequest(RequestSigner::post('/apps/app-id/events', [
+        'name' => 'NewEvent',
+        'channel' => 'test-channel',
+        'data' => json_encode(['some' => 'data']),
+        'socket_id' => '123.456',
+    ]));
+
+    expect($response->getStatus())->toBe(200)
+        ->and($this->pubSub->published)->toHaveCount(1)
+        ->and($this->pubSub->published[0]['socket_id'])->toBe('123.456');
+});
+
+it('keeps toOthers working across servers for HTTP batch events', function () {
+    $response = (new EventsBatchController)->handleRequest(RequestSigner::post('/apps/app-id/batch_events', ['batch' => [
+        [
+            'name' => 'NewEvent',
+            'channel' => 'test-channel',
+            'data' => json_encode(['some' => 'data']),
+            'socket_id' => '123.456',
+        ],
+    ]]));
+
+    expect($response->getStatus())->toBe(200)
+        ->and($this->pubSub->published)->toHaveCount(1)
+        ->and($this->pubSub->published[0]['socket_id'])->toBe('123.456');
 });
 
 it('does not publish when the server should not publish events', function () {

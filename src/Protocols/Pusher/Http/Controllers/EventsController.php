@@ -43,6 +43,7 @@ class EventsController extends Controller
                 'data' => $payload['data'],
             ],
             $except ? $except->connection() : null,
+            $payload['socket_id'] ?? null,
         );
 
         if (isset($payload['info'])) {
