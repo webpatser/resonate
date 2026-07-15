@@ -6,7 +6,7 @@ All notable changes to `webpatser/resonate` are documented here.
 
 ### Changed
 
-- **Verified against Laravel 13.20.0** with no code changes required. The 13.20 release does not touch anything Resonate depends on: no changes in Broadcasting or Illuminate Redis (Resonate uses fledge-fiber's async Redis client anyway), the Console changes (`HasParameters`, `GeneratorCommand`, `Scheduling\Event`) leave the view components and `OutputStyle` APIs used by `CliLogger` untouched, and the only Cache change is `MemcachedConnector`, unrelated to the `RateLimiter` used for rate limiting. Upstream Reverb has no releases since v1.10.2, nothing to mirror. Dependencies refreshed to `laravel/framework v13.20.0` + `webpatser/fledge-fiber v13.20.0.0`; test suite green (324 passed).
+- Verify against Laravel 13.20.0, no code changes required. Nothing Resonate depends on changed: Broadcasting and Illuminate Redis are untouched, the Console view-component and `OutputStyle` APIs used by `CliLogger` are unchanged, and the only Cache change is `MemcachedConnector`. Reverb has no releases since v1.10.2. Dependencies refreshed to `laravel/framework v13.20.0` and `webpatser/fledge-fiber v13.20.0.0`; suite green.
 
 ## v0.4.1 - 2026-07-07
 
