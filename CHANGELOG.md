@@ -2,11 +2,15 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
-## Unreleased
+## v0.5.0 - 2026-07-22
+
+### Added
+
+- Dev command registration: `resonate:start` now shows up in the Laravel 13.18+ `php artisan dev` UI alongside `serve`, `queue:listen`, and friends, ported from Reverb v1.11.0. `Resonate::registerDevCommands()` calls `Illuminate\Foundation\DevCommands::artisan('resonate:start', 'resonate')` when that class exists, so older Laravel versions without the dev command runner are unaffected. Wired in at the end of `ResonateServiceProvider::register()`.
 
 ### Changed
 
-- Verify against Laravel 13.20.0, no code changes required. Nothing Resonate depends on changed: Broadcasting and Illuminate Redis are untouched, the Console view-component and `OutputStyle` APIs used by `CliLogger` are unchanged, and the only Cache change is `MemcachedConnector`. Reverb has no releases since v1.10.2. Dependencies refreshed to `laravel/framework v13.20.0` and `webpatser/fledge-fiber v13.20.0.0`; suite green.
+- Verify against Laravel 13.21.1. Reverb v1.11.0 (2026-07-21) was checked for parity: its socket-id-through-pub/sub fix already shipped in Resonate v0.4.1 (see below), the dev command registration is the one substantive change carried into this release (above), and the rest of that Reverb release is CI and dependabot housekeeping with nothing left to port. The 13.20.0 to 13.21.1 window also touches nothing else Resonate depends on: Broadcasting and Illuminate Redis are untouched and the Queue changes are cosmetic. Dependencies refreshed to `laravel/framework v13.21.1` and `webpatser/fledge-fiber v13.21.1.0`; suite green.
 
 ## v0.4.1 - 2026-07-07
 

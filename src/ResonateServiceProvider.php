@@ -64,6 +64,8 @@ class ResonateServiceProvider extends ServiceProvider
         $this->registerPlugins();
 
         $this->registerScaling();
+
+        Resonate::registerDevCommands();
     }
 
     /**
