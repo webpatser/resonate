@@ -66,7 +66,7 @@ it('delivers a broadcast envelope across the Redis pub/sub transport', function 
             ]);
 
             delay(0.3); // let the envelope round-trip through Redis
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $failure = $e->getMessage();
         } finally {
             EventLoop::cancel($watchdog);

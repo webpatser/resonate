@@ -65,7 +65,7 @@ it('completes private and presence channel subscribe handshakes', function () {
             $received['rejected'] = json_decode($connection->receive()->buffer(), true);
 
             $connection->close();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $failure = $e->getMessage();
         } finally {
             EventLoop::cancel($watchdog);

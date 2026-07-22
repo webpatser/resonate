@@ -15,7 +15,7 @@ class Channel
     /**
      * The channel connections.
      *
-     * @var \Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelConnectionManager
+     * @var ChannelConnectionManager
      */
     protected $connections;
 

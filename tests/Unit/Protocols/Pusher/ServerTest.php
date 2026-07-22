@@ -1,5 +1,7 @@
 <?php
 
+use Webpatser\Resonate\Contracts\Logger;
+use Webpatser\Resonate\Loggers\Log;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\Server;
 use Webpatser\Resonate\Tests\Fakes\FakeConnection;
@@ -242,7 +244,7 @@ it('does not log a rate-limited message body', function () {
     // Swap a recording Logger in via reflection. The package's `Log` proxy
     // statically caches its resolved Logger, so rebinding the container alone
     // isn't enough once any earlier test has fired a `Log::*` call.
-    $recorder = new class implements \Webpatser\Resonate\Contracts\Logger
+    $recorder = new class implements Logger
     {
         public array $bodies = [];
 
@@ -258,7 +260,7 @@ it('does not log a rate-limited message body', function () {
         public function line(int $lines = 1): void {}
     };
 
-    $proxy = new ReflectionClass(\Webpatser\Resonate\Loggers\Log::class);
+    $proxy = new ReflectionClass(Log::class);
     $previous = $proxy->getStaticPropertyValue('logger');
     $proxy->setStaticPropertyValue('logger', $recorder);
 

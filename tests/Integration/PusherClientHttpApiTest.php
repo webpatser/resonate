@@ -6,6 +6,7 @@ use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Promise\FulfilledPromise;
 use GuzzleHttp\Psr7\Response as GuzzlePsrResponse;
+use League\Uri\Http;
 use Psr\Http\Message\RequestInterface;
 use Pusher\ApiErrorException;
 use Pusher\Pusher;
@@ -34,7 +35,7 @@ function resonateGuzzleClient(): GuzzleClient
         $fledgeRequest = new FledgeRequest(
             Mockery::mock(FledgeClient::class),
             $request->getMethod(),
-            League\Uri\Http::new((string) $request->getUri()),
+            Http::new((string) $request->getUri()),
             [],
             (string) $request->getBody(),
         );

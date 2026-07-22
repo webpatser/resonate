@@ -1,5 +1,8 @@
 <?php
 
+use Fledge\Async\Http\Server\Driver\Client;
+use Fledge\Async\Http\Server\Request;
+use League\Uri\Http;
 use Webpatser\Resonate\Protocols\Pusher\Http\Controllers\ChannelUsersController;
 use Webpatser\Resonate\Server\Router;
 use Webpatser\Resonate\Tests\Fakes\FakeConnection;
@@ -72,10 +75,10 @@ it('returns the unique user data', function () {
 });
 
 it('fails when using an invalid signature', function () {
-    $request = new Fledge\Async\Http\Server\Request(
-        Mockery::mock(Fledge\Async\Http\Server\Driver\Client::class),
+    $request = new Request(
+        Mockery::mock(Client::class),
         'GET',
-        League\Uri\Http::new('http://localhost/apps/app-id/channels/presence-test-channel/users?auth_signature=deadbeef'),
+        Http::new('http://localhost/apps/app-id/channels/presence-test-channel/users?auth_signature=deadbeef'),
     );
     $request->setAttribute(Router::class, ['appId' => 'app-id', 'channel' => 'presence-test-channel']);
 

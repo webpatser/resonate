@@ -2,6 +2,8 @@
 
 use Fledge\Async\Http\Server\Driver\Client;
 use Fledge\Async\Http\Server\Request as FledgeRequest;
+use Illuminate\Support\Arr;
+use League\Uri\Http;
 use Webpatser\Resonate\Protocols\Pusher\Http\Controllers\ChannelsController;
 use Webpatser\Resonate\Server\Router;
 use Webpatser\Resonate\Tests\Fakes\FakeConnection;
@@ -53,7 +55,7 @@ if (! function_exists('signedChannelRequest')) {
         $request = new FledgeRequest(
             Mockery::mock(Client::class),
             $method,
-            League\Uri\Http::new($uri),
+            Http::new($uri),
             [],
             $body,
         );
@@ -126,7 +128,7 @@ it('only returns occupied channels', function () {
     subscribeToChannel('test-channel-two');
 
     $channels = channels();
-    $connection = Illuminate\Support\Arr::first($channels->connections());
+    $connection = Arr::first($channels->connections());
     $channels->unsubscribeFromAll($connection->connection());
 
     $response = (new ChannelsController)->handleRequest(signedChannelRequest('GET', '/apps/app-id/channels'));
@@ -139,7 +141,7 @@ it('fails when using an invalid signature', function () {
     $request = new FledgeRequest(
         Mockery::mock(Client::class),
         'GET',
-        League\Uri\Http::new('http://localhost/apps/app-id/channels?auth_signature=deadbeef'),
+        Http::new('http://localhost/apps/app-id/channels?auth_signature=deadbeef'),
     );
     $request->setAttribute(Router::class, ['appId' => 'app-id']);
 

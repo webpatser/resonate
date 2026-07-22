@@ -5,6 +5,7 @@ namespace Webpatser\Resonate\Protocols\Pusher;
 use Illuminate\Support\Str;
 use Webpatser\Resonate\Application;
 use Webpatser\Resonate\Contracts\ServerProvider;
+use Webpatser\Resonate\Protocols\Pusher\Channels\ChannelConnection;
 use Webpatser\Resonate\Protocols\Pusher\Concerns\InteractsWithChannelInformation;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Scaling\Contracts\PubSubProvider;
@@ -321,7 +322,7 @@ class MetricsHandler
     /**
      * Get the connections for the given application.
      *
-     * @return array<string, \Webpatser\Resonate\Protocols\Pusher\Channels\ChannelConnection>
+     * @return array<string, ChannelConnection>
      */
     protected function connections(Application $application): array
     {

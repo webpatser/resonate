@@ -2,10 +2,12 @@
 
 namespace Webpatser\Resonate\Plugins;
 
+use Webpatser\Resonate\Protocols\Pusher\Server;
+
 /**
  * The outcome a {@see Contracts\MessageInterceptor} returns for an inbound message.
  *
- * It tells the Pusher {@see \Webpatser\Resonate\Protocols\Pusher\Server} what to
+ * It tells the Pusher {@see Server} what to
  * do with a decoded client message after the plugin layer has inspected it.
  */
 enum MessageDisposition

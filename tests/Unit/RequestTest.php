@@ -2,6 +2,7 @@
 
 use Fledge\Async\Http\Server\Driver\Client;
 use Fledge\Async\Http\Server\Request as FledgeRequest;
+use League\Uri\Http;
 use Webpatser\Resonate\Server\Request;
 
 /*
@@ -21,7 +22,7 @@ function fledgeRequest(string $method, string $uri, array $headers = [], string 
     return new FledgeRequest(
         Mockery::mock(Client::class),
         $method,
-        League\Uri\Http::new($uri),
+        Http::new($uri),
         $headers,
         $body,
     );

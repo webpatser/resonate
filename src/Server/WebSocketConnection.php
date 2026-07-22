@@ -2,6 +2,8 @@
 
 namespace Webpatser\Resonate\Server;
 
+use Fledge\Async\WebSocket\WebsocketClient;
+use Laravel\Reverb\Connection;
 use Webpatser\Resonate\Concerns\GeneratesIdentifiers;
 use Webpatser\Resonate\Contracts\Connection as ConnectionContract;
 use Webpatser\Resonate\Events\MessageSent;
@@ -9,9 +11,9 @@ use Webpatser\Resonate\Events\MessageSent;
 /**
  * Protocol-level connection backed by the fledge-fiber WebSocket transport.
  *
- * This is the equivalent of Reverb's {@see \Laravel\Reverb\Connection}: it
+ * This is the equivalent of Reverb's {@see Connection}: it
  * extends the abstract {@see ConnectionContract} and adapts a fledge-fiber
- * {@see \Fledge\Async\WebSocket\WebsocketClient} (wrapped in a
+ * {@see WebsocketClient} (wrapped in a
  * {@see RawConnection}) to the Pusher protocol server.
  */
 class WebSocketConnection extends ConnectionContract

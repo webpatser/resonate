@@ -2,6 +2,7 @@
 
 use Fledge\Async\Http\Server\Driver\Client;
 use Fledge\Async\Http\Server\Request as FledgeRequest;
+use League\Uri\Http;
 use Webpatser\Resonate\Protocols\Pusher\Http\Controllers\UsersTerminateController;
 use Webpatser\Resonate\Server\Router;
 use Webpatser\Resonate\Tests\Fakes\FakeConnection;
@@ -41,7 +42,7 @@ function signedTerminateRequest(string $path, array $query, array $routeParams):
     $request = new FledgeRequest(
         Mockery::mock(Client::class),
         'POST',
-        League\Uri\Http::new('http://localhost'.$path.'?'.http_build_query($query)),
+        Http::new('http://localhost'.$path.'?'.http_build_query($query)),
         [],
         '',
     );
@@ -114,7 +115,7 @@ it('returns 401 for an invalid signature', function () {
     $tampered = new FledgeRequest(
         Mockery::mock(Client::class),
         'POST',
-        League\Uri\Http::new('http://localhost/apps/app-id/users/456/terminate_connections?auth_key=app-key&auth_signature=deadbeef'),
+        Http::new('http://localhost/apps/app-id/users/456/terminate_connections?auth_key=app-key&auth_signature=deadbeef'),
     );
     $tampered->setAttribute(Router::class, ['appId' => 'app-id', 'userId' => '456']);
 

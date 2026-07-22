@@ -2,6 +2,7 @@
 
 use Illuminate\Foundation\DevCommands;
 use Webpatser\Resonate\Resonate;
+use Webpatser\Resonate\ResonateServiceProvider;
 
 /*
  * `DevCommands` keeps its registry in static properties that live for the
@@ -61,7 +62,7 @@ it('registers resonate:start as a dev command', function () {
 });
 
 it('wires the dev command registration into the service provider boot', function () {
-    app()->register(\Webpatser\Resonate\ResonateServiceProvider::class, force: true);
+    app()->register(ResonateServiceProvider::class, force: true);
 
     $resonate = collect(DevCommands::commands())->firstWhere('name', 'resonate');
 

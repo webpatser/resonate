@@ -2,6 +2,7 @@
 
 use Fledge\Async\Http\Server\Driver\Client;
 use Fledge\Async\Http\Server\Request as FledgeRequest;
+use League\Uri\Http;
 use Webpatser\Resonate\Protocols\Pusher\Http\Controllers\Controller;
 use Webpatser\Resonate\Server\Request;
 use Webpatser\Resonate\Server\Response;
@@ -63,7 +64,7 @@ function signedRequest(string $method, string $path, array $query = [], string $
     $request = new FledgeRequest(
         Mockery::mock(Client::class),
         $method,
-        League\Uri\Http::new($uri),
+        Http::new($uri),
         [],
         $body,
     );
@@ -110,7 +111,7 @@ it('rejects a request with an invalid signature with 401', function () {
     $tampered = new FledgeRequest(
         Mockery::mock(Client::class),
         'GET',
-        League\Uri\Http::new('http://localhost/apps/app-id/channels?auth_key=app-key&auth_signature=deadbeef'),
+        Http::new('http://localhost/apps/app-id/channels?auth_key=app-key&auth_signature=deadbeef'),
     );
     $tampered->setAttribute(Router::class, ['appId' => 'app-id']);
 
@@ -217,7 +218,7 @@ it('rejects an auth_signature passed as an array', function () {
     $request = new FledgeRequest(
         Mockery::mock(Client::class),
         'GET',
-        League\Uri\Http::new('http://localhost/apps/app-id/channels?'.$query),
+        Http::new('http://localhost/apps/app-id/channels?'.$query),
     );
     $request->setAttribute(Router::class, ['appId' => 'app-id']);
 
@@ -231,7 +232,7 @@ it('rejects a request with no auth_signature', function () {
     $request = new FledgeRequest(
         Mockery::mock(Client::class),
         'GET',
-        League\Uri\Http::new('http://localhost/apps/app-id/channels?auth_key=app-key&auth_timestamp='.time().'&auth_version=1.0'),
+        Http::new('http://localhost/apps/app-id/channels?auth_key=app-key&auth_timestamp='.time().'&auth_version=1.0'),
     );
     $request->setAttribute(Router::class, ['appId' => 'app-id']);
 
@@ -253,7 +254,7 @@ it('rejects a method substitution replay', function () {
     $replay = new FledgeRequest(
         Mockery::mock(Client::class),
         'GET',
-        League\Uri\Http::new('http://localhost/apps/app-id/events?'.$query),
+        Http::new('http://localhost/apps/app-id/events?'.$query),
     );
     $replay->setAttribute(Router::class, ['appId' => 'app-id']);
 
@@ -275,7 +276,7 @@ it('rejects a path substitution replay', function () {
     $replay = new FledgeRequest(
         Mockery::mock(Client::class),
         'GET',
-        League\Uri\Http::new('http://localhost/apps/app-id/channels?'.$query),
+        Http::new('http://localhost/apps/app-id/channels?'.$query),
     );
     $replay->setAttribute(Router::class, ['appId' => 'app-id']);
 
@@ -298,7 +299,7 @@ it('rejects body tampering after signing', function () {
     $tampered = new FledgeRequest(
         Mockery::mock(Client::class),
         'POST',
-        League\Uri\Http::new('http://localhost/apps/app-id/events?'.$query),
+        Http::new('http://localhost/apps/app-id/events?'.$query),
         [],
         '{"foo":"b"}',
     );
@@ -341,7 +342,7 @@ it('canonicalizes array query parameters as comma-joined values', function () {
     $request = new FledgeRequest(
         Mockery::mock(Client::class),
         'GET',
-        League\Uri\Http::new('http://localhost/apps/app-id/channels?'.$query),
+        Http::new('http://localhost/apps/app-id/channels?'.$query),
     );
     $request->setAttribute(Router::class, ['appId' => 'app-id']);
 

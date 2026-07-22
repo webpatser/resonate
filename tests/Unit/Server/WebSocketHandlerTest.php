@@ -2,6 +2,7 @@
 
 use Fledge\Async\Http\Server\Driver\Client;
 use Fledge\Async\Http\Server\Request as FledgeRequest;
+use League\Uri\Http;
 use Mockery;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
 use Webpatser\Resonate\Protocols\Pusher\Server;
@@ -34,7 +35,7 @@ function wsRequestForPath(string $path): FledgeRequest
     return new FledgeRequest(
         Mockery::mock(Client::class),
         'GET',
-        \League\Uri\Http::new('http://localhost'.$path),
+        Http::new('http://localhost'.$path),
     );
 }
 

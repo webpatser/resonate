@@ -1,5 +1,8 @@
 <?php
 
+use Fledge\Async\Http\Server\Driver\Client;
+use Fledge\Async\Http\Server\Request;
+use League\Uri\Http;
 use Webpatser\Resonate\Protocols\Pusher\Http\Controllers\ConnectionsController;
 use Webpatser\Resonate\Server\Router;
 use Webpatser\Resonate\Tests\Fakes\FakeConnection;
@@ -34,10 +37,10 @@ it('can return the correct connection count when subscribed to multiple channels
 });
 
 it('fails when using an invalid signature', function () {
-    $request = new Fledge\Async\Http\Server\Request(
-        Mockery::mock(Fledge\Async\Http\Server\Driver\Client::class),
+    $request = new Request(
+        Mockery::mock(Client::class),
         'GET',
-        League\Uri\Http::new('http://localhost/apps/app-id/connections?auth_signature=deadbeef'),
+        Http::new('http://localhost/apps/app-id/connections?auth_signature=deadbeef'),
     );
     $request->setAttribute(Router::class, ['appId' => 'app-id']);
 

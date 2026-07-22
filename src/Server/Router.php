@@ -6,6 +6,7 @@ use Fledge\Async\Http\HttpStatus;
 use Fledge\Async\Http\Server\Request as FledgeRequest;
 use Fledge\Async\Http\Server\RequestHandler;
 use Fledge\Async\Http\Server\Response as FledgeResponse;
+use Fledge\Async\Http\Server\SocketHttpServer;
 
 /**
  * A plain prefix/regex router for the Resonate HTTP server.
@@ -16,7 +17,7 @@ use Fledge\Async\Http\Server\Response as FledgeResponse;
  * so the (later phase) HTTP API controllers slot in with no extra wiring.
  *
  * The router itself is a fledge-fiber {@see RequestHandler}: it is registered
- * directly with the {@see \Fledge\Async\Http\Server\SocketHttpServer}.
+ * directly with the {@see SocketHttpServer}.
  */
 class Router implements RequestHandler
 {

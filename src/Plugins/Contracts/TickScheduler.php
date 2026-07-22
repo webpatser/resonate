@@ -2,10 +2,12 @@
 
 namespace Webpatser\Resonate\Plugins\Contracts;
 
+use Revolt\EventLoop;
+
 /**
  * A plugin capability that registers periodic callbacks on the server event loop.
  *
- * Each registered tick is scheduled with {@see \Revolt\EventLoop::repeat()} and
+ * Each registered tick is scheduled with {@see EventLoop::repeat()} and
  * its body runs inside a fiber, so async DB/Redis calls suspend the fiber
  * rather than blocking the loop.
  */

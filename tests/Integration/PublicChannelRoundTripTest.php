@@ -42,7 +42,7 @@ it('completes the Pusher connection and public-channel subscribe handshake', fun
             $received['subscribed'] = $subscribed;
 
             $connection->close();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $failure = $e->getMessage();
         } finally {
             EventLoop::cancel($watchdog);

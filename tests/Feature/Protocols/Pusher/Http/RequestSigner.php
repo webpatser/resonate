@@ -5,7 +5,12 @@ namespace Webpatser\Resonate\Tests\Feature\Protocols\Pusher\Http;
 use Fledge\Async\Http\Server\Driver\Client;
 use Fledge\Async\Http\Server\Request as FledgeRequest;
 use Fledge\Async\Http\Server\Response as FledgeResponse;
+use League\Uri\Http;
 use Mockery;
+use Webpatser\Resonate\Contracts\ApplicationProvider;
+use Webpatser\Resonate\Contracts\Connection;
+use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
+use Webpatser\Resonate\Protocols\Pusher\Http\Controllers\Controller;
 use Webpatser\Resonate\Server\Router;
 
 use function Fledge\Async\Stream\buffer;
@@ -16,7 +21,7 @@ use function Fledge\Async\Stream\buffer;
  * exercised directly without booting the async HTTP server.
  *
  * The signing logic mirrors the canonicalization in the base
- * {@see \Webpatser\Resonate\Protocols\Pusher\Http\Controllers\Controller}.
+ * {@see Controller}.
  */
 class RequestSigner
 {
@@ -79,7 +84,7 @@ class RequestSigner
         $request = new FledgeRequest(
             Mockery::mock(Client::class),
             $method,
-            \League\Uri\Http::new($uri),
+            Http::new($uri),
             [],
             $body,
         );
@@ -111,7 +116,7 @@ class RequestSigner
         $request = new FledgeRequest(
             Mockery::mock(Client::class),
             'POST',
-            \League\Uri\Http::new($uri),
+            Http::new($uri),
             [],
             $body,
         );
@@ -134,12 +139,12 @@ class RequestSigner
      * (and presence channel data) the channel type requires.
      */
     public static function subscribe(
-        \Webpatser\Resonate\Contracts\Connection $connection,
+        Connection $connection,
         string $channel,
         ?array $channelData = null,
     ): void {
-        $manager = app(\Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager::class)
-            ->for(app(\Webpatser\Resonate\Contracts\ApplicationProvider::class)->all()->first());
+        $manager = app(ChannelManager::class)
+            ->for(app(ApplicationProvider::class)->all()->first());
 
         $auth = null;
         $data = null;

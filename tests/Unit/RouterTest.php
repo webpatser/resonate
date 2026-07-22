@@ -1,8 +1,10 @@
 <?php
 
+use Fledge\Async\Http\Server\Driver\Client;
 use Fledge\Async\Http\Server\Request as FledgeRequest;
 use Fledge\Async\Http\Server\RequestHandler;
 use Fledge\Async\Http\Server\Response as FledgeResponse;
+use League\Uri\Http;
 use Webpatser\Resonate\Server\Route;
 use Webpatser\Resonate\Server\Router;
 
@@ -129,9 +131,9 @@ it('dispatches a matched request to the route handler and sets route attributes'
     $router->get('/app/{appKey}', stubHandler());
 
     $request = new FledgeRequest(
-        Mockery::mock(\Fledge\Async\Http\Server\Driver\Client::class),
+        Mockery::mock(Client::class),
         'GET',
-        \League\Uri\Http::new('http://localhost/app/abc'),
+        Http::new('http://localhost/app/abc'),
     );
 
     $response = $router->handleRequest($request);
@@ -145,9 +147,9 @@ it('returns a 404 response for an unmatched request', function () {
     $router->get('/up', stubHandler());
 
     $request = new FledgeRequest(
-        Mockery::mock(\Fledge\Async\Http\Server\Driver\Client::class),
+        Mockery::mock(Client::class),
         'GET',
-        \League\Uri\Http::new('http://localhost/missing'),
+        Http::new('http://localhost/missing'),
     );
 
     expect($router->handleRequest($request)->getStatus())->toBe(404);

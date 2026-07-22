@@ -213,7 +213,7 @@ class Server
     /**
      * Verify the origin of the connection.
      *
-     * @throws \Webpatser\Resonate\Protocols\Pusher\Exceptions\InvalidOrigin
+     * @throws InvalidOrigin
      */
     protected function verifyOrigin(Connection $connection): void
     {

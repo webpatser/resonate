@@ -1,5 +1,8 @@
 <?php
 
+use Fledge\Async\Http\Server\Driver\Client;
+use Fledge\Async\Http\Server\Request;
+use League\Uri\Http;
 use Webpatser\Resonate\Protocols\Pusher\Http\Controllers\ChannelController;
 use Webpatser\Resonate\Server\Router;
 use Webpatser\Resonate\Tests\Feature\Protocols\Pusher\Http\RequestSigner;
@@ -82,10 +85,10 @@ it('can return only the requested attributes', function () {
 });
 
 it('fails when using an invalid signature', function () {
-    $request = new Fledge\Async\Http\Server\Request(
-        Mockery::mock(Fledge\Async\Http\Server\Driver\Client::class),
+    $request = new Request(
+        Mockery::mock(Client::class),
         'GET',
-        League\Uri\Http::new('http://localhost/apps/app-id/channels/test-channel-one?auth_signature=deadbeef'),
+        Http::new('http://localhost/apps/app-id/channels/test-channel-one?auth_signature=deadbeef'),
     );
     $request->setAttribute(Router::class, ['appId' => 'app-id', 'channel' => 'test-channel-one']);
 
