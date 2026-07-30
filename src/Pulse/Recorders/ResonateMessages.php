@@ -43,10 +43,7 @@ class ResonateMessages
         }
 
         $this->pulse->record(
-            type: 'reverb_message:'.match ($event::class) {
-                MessageSent::class => 'sent',
-                MessageReceived::class => 'received',
-            },
+            type: 'reverb_message:'.($event instanceof MessageSent ? 'sent' : 'received'),
             key: $event->connection->app()->id(),
             timestamp: CarbonImmutable::now()->getTimestamp(),
         )->onlyBuckets()->count();

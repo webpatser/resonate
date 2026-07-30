@@ -21,7 +21,7 @@ class ArrayChannelManager implements ChannelManagerInterface
     /**
      * The underlying array of applications and their channels.
      *
-     * @var array<string, array<string, array<string, Channel>>>
+     * @var array<string, array<string, Channel>>
      */
     protected $applications = [];
 

@@ -3,8 +3,36 @@
 namespace Webpatser\Resonate\Protocols\Pusher\Channels;
 
 use Illuminate\Support\Arr;
+use Webpatser\Resonate\Application;
 use Webpatser\Resonate\Contracts\Connection;
 
+/**
+ * Wraps a connection together with the data it subscribed to a channel with.
+ *
+ * Any method not defined here is proxied to the underlying connection by __call().
+ *
+ * @method string identifier()
+ * @method string id()
+ * @method void control(string $type = Connection::CONTROL_PING)
+ * @method void terminate()
+ * @method Application app()
+ * @method string|null origin()
+ * @method void ping()
+ * @method void pong()
+ * @method int|null lastSeenAt()
+ * @method Connection setLastSeenAt(int $time)
+ * @method Connection touch()
+ * @method void disconnect()
+ * @method bool isActive()
+ * @method bool isInactive()
+ * @method bool isStale()
+ * @method bool usesControlFrames()
+ * @method Connection setUsesControlFrames(bool $usesControlFrames = true)
+ * @method Connection setState(string $key, mixed $value)
+ * @method mixed state(?string $key = null, mixed $default = null)
+ * @method bool hasState(string $key)
+ * @method Connection forgetState(string $key)
+ */
 class ChannelConnection
 {
     /**

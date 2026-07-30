@@ -24,6 +24,7 @@
         "laravel/pulse": "^1.0",
         "orchestra/testbench": "^10.0|^11.0",
         "pestphp/pest": "^4.0",
+        "phpstan/phpstan": "^2.2",
         "pusher/pusher-php-server": "^7.2"
     },
     "autoload": {
@@ -44,7 +45,9 @@
         }
     },
     "scripts": {
-        "test": "pest"
+        "test": "pest",
+        "lint": "pint --test",
+        "analyse": "phpstan analyse --no-progress"
     },
     "config": {
         "sort-packages": true,

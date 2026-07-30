@@ -106,7 +106,7 @@ class InstallCommand extends Command
      */
     protected function updateBroadcastingConfiguration(): void
     {
-        if ($this->laravel->config->has('broadcasting.connections.reverb')) {
+        if ($this->laravel->make('config')->has('broadcasting.connections.reverb')) {
             return;
         }
 

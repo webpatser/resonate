@@ -184,7 +184,7 @@ class ReloadServer extends Command
 
         $status = proc_get_status($process);
 
-        return $status['pid'] ?? null;
+        return $status['pid'];
     }
 
     /**

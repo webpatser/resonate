@@ -292,7 +292,7 @@ class MetricsHandler
 
         return $this->infoForChannels(
             $application,
-            $channels->all(),
+            $channels->values()->all(),
             $options['info'] ?? ''
         );
     }

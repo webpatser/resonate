@@ -15,7 +15,7 @@ class Log
     /**
      * The logger instance.
      *
-     * @var Logger
+     * @var Logger|null
      */
     protected static $logger;
 

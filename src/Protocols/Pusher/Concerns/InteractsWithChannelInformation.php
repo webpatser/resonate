@@ -56,7 +56,7 @@ trait InteractsWithChannelInformation
             'occupied' => in_array('occupied', $info) ? $count > 0 : null,
             'user_count' => in_array('user_count', $info) && $this->isPresenceChannel($channel) ? $this->userCount($channel) : null,
             'subscription_count' => in_array('subscription_count', $info) && ! $this->isPresenceChannel($channel) ? $count : null,
-            'cache' => in_array('cache', $info) && $this->isCacheChannel($channel) ? $channel->cachedPayload() : null,
+            'cache' => in_array('cache', $info) && $channel instanceof CacheChannel ? $channel->cachedPayload() : null,
         ];
     }
 

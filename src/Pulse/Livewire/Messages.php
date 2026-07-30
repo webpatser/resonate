@@ -2,7 +2,6 @@
 
 namespace Webpatser\Resonate\Pulse\Livewire;
 
-use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Request;
 use Illuminate\Support\Facades\View;
@@ -37,7 +36,9 @@ class Messages extends Card
     {
         [$all, $time, $runAt] = $this->remember(fn () => [
             $readings = $this->graph(['reverb_message:sent', 'reverb_message:received'], 'count'),
-            $readings->map->map(fn ($values) => $values->map($this->rate(...))),
+            $readings->map(fn ($byKey) => $byKey->map(
+                fn ($values) => $values->map(fn ($count) => $this->rate($count))
+            )),
         ]);
 
         [$messages, $messagesRate] = $all;
@@ -57,8 +58,6 @@ class Messages extends Card
 
     /**
      * Define any CSS that should be loaded for the component.
-     *
-     * @return string|Htmlable|array<int, string|Htmlable>|null
      */
     protected function css(): HtmlString
     {
