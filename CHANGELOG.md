@@ -2,6 +2,21 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## Unreleased
+
+Correctness release from a full audit of the server and its plugin family. Three of these break or defeat something in every deployment; the CI changes exist so they cannot come back silently.
+
+### Fixed
+
+- **Every graceful shutdown was an instant kill.** `StartServer::handleSignal()` returned an exit code on all paths, and Symfony's signal dispatch runs `if (false !== $exitCode) exit($exitCode)`, so the process terminated the moment the handler returned. The drain window (`HttpServer::drain()` only *schedules* a watchdog) never elapsed, so `resonate:reload` and every systemd SIGTERM severed all live connections with no close handshake, and the PID file was left behind because `exit()` skips the `finally`. Both paths now return `false` and hand the work to the event loop, so `start()` unwinds on its own. Deferring also takes the work out of async signal context, where it ran between opcodes of whatever fiber was executing and could interleave with a partially written frame. The previous unit test asserted the returned exit code, which pinned the bug in place rather than catching it; it now pins the `false` contract.
+- **Rejected connections stayed fully usable and reset the connection quota.** A connection refused by the origin allow-list or `max_connections` was sent a `pusher:error` frame but never closed, and the handler entered its receive loop regardless, so a client that ignored the frame kept subscribing and whispering normally. Separately, `close()` decremented the per-application counter unconditionally, including for connections that never reached the increment in `open()`, so opening and dropping rejected connections walked the count below the live total and reset the quota for everyone on the node. `open()` now terminates rejected connections and returns `false`, admission is recorded on the connection, and only an admitted connection decrements.
+- **A Redis restart permanently deafened the node.** The pub/sub subscriber fiber logged one line and ended, with nothing to resubscribe: `RedisSubscriber` retries once inline but calls `connect()` outside its own catch, so a reconnect attempted while Redis is still down stops it terminally. The node kept publishing while silently never receiving another broadcast, terminate request or metrics reply until restarted. `RedisPubSubProvider` now owns the retry loop, backing off exponentially (0.5s doubling to a 10s ceiling) and building a fresh subscriber each time. `connect()` is idempotent, so a second call can no longer strand a subscription and leave two listener fibers double-dispatching, and `publish()` on a disconnected provider logs instead of silently dropping.
+
+### Changed
+
+- CI runs Pint and PHPStan (level 5, no baseline and no ignores) and starts a Redis service so the previously self-skipping scaling integration tests actually run.
+- `ChannelConnection` documents the methods it proxies to the underlying connection with `@method` tags, and several docblocks were corrected to match reality, including the `$applications` shape in `ArrayChannelManager`, which claimed one array level more than the code uses.
+
 ## v0.5.0 - 2026-07-22
 
 ### Added

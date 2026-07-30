@@ -61,7 +61,11 @@ class WebSocketHandler implements WebsocketClientHandler
             $request->getHeader('origin'),
         );
 
-        $this->server->open($connection);
+        // A rejected connection has already been sent its error frame and
+        // terminated. Entering the receive loop here would keep serving it.
+        if (! $this->server->open($connection)) {
+            return;
+        }
 
         try {
             while ($message = $client->receive()) {

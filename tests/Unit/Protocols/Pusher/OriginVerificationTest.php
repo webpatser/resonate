@@ -32,6 +32,10 @@ function assertOriginAllowed(FakeConnection $connection): void
 
 function assertOriginRejected(FakeConnection $connection): void
 {
+    // A rejected connection must also be terminated. Sending only the error
+    // frame left the socket serving a client that ignored it.
+    expect($connection->wasTerminated)->toBeTrue();
+
     $connection->assertReceived([
         'event' => 'pusher:error',
         'data' => json_encode([

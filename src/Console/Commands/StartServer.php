@@ -87,6 +87,10 @@ class StartServer extends Command implements SignalableCommandInterface
 
         $this->writePidFile();
 
+        // Belt and braces for the paths that bypass the finally below, such as
+        // the Windows control handler or a fatal error mid-loop.
+        register_shutdown_function(fn () => $this->removePidFile());
+
         $this->components->info("Starting server on {$host}:{$port}{$path}".(($hostname && $hostname !== $host) ? " ({$hostname})" : ''));
 
         try {
@@ -247,28 +251,44 @@ class StartServer extends Command implements SignalableCommandInterface
      * SIGUSR2 triggers a graceful drain: stop accepting new connections, let
      * in-flight ones finish, and exit after the configured drain timeout.
      * All other handled signals fall back to the hard `stop()` path.
+     *
+     * Returning anything other than `false` makes Symfony call `exit()` the
+     * moment this method returns, which would kill the process before either
+     * the drain window or the queued loop-stop could run, severing every live
+     * connection. Both paths therefore return `false` and hand the actual work
+     * to the event loop: `drain()` schedules a watchdog and `stop()` queues a
+     * driver stop, so `start()` unwinds on its own and `handle()` completes.
+     *
+     * The work is deferred rather than performed inline because with
+     * `pcntl_async_signals` this method runs between opcodes of whatever fiber
+     * happens to be executing. Doing console I/O and closing listener sockets
+     * there can interleave with a partially written frame.
      */
     public function handleSignal(int $signal = 0, int|false $previousExitCode = 0): int|false
     {
         if (defined('SIGUSR2') && $signal === SIGUSR2) {
             $timeout = (int) ($this->laravel['config']['reverb.servers.reverb.drain_timeout'] ?? 30);
 
-            $this->components->info("Draining the server (timeout: {$timeout}s).");
+            EventLoop::defer(function () use ($timeout) {
+                $this->components->info("Draining the server (timeout: {$timeout}s).");
+
+                $this->scheduler?->cancelAll();
+
+                $this->server?->drain($timeout);
+            });
+
+            return false;
+        }
+
+        EventLoop::defer(function () {
+            $this->components->info('Gracefully stopping the server.');
 
             $this->scheduler?->cancelAll();
 
-            $this->server?->drain($timeout);
+            $this->server?->stop();
+        });
 
-            return $previousExitCode;
-        }
-
-        $this->components->info('Gracefully stopping the server.');
-
-        $this->scheduler?->cancelAll();
-
-        $this->server?->stop();
-
-        return $previousExitCode;
+        return false;
     }
 
     /**
@@ -277,7 +297,11 @@ class StartServer extends Command implements SignalableCommandInterface
     public function handleSignalWindows(): void
     {
         if (function_exists('sapi_windows_set_ctrl_handler')) {
-            sapi_windows_set_ctrl_handler(fn () => exit($this->handleSignal()));
+            sapi_windows_set_ctrl_handler(function (): void {
+                $this->handleSignal();
+
+                exit(0);
+            });
         }
     }
 

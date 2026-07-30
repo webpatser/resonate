@@ -33,15 +33,39 @@ class Server
     }
 
     /**
-     * Handle the a client connection.
+     * The connection state key recording that a connection passed admission.
+     *
+     * Only an admitted connection incremented the per-application counter, so
+     * only an admitted connection may decrement it on close.
      */
-    public function open(Connection $connection): void
+    public const ADMITTED = 'resonate.admitted';
+
+    /**
+     * Handle the a client connection.
+     *
+     * Returns false when the connection was rejected, in which case it has
+     * already been sent an error frame and terminated. A rejected connection
+     * must not be read from: leaving its socket open let a client that ignored
+     * the error frame keep subscribing and whispering, which made the origin
+     * allow-list and `max_connections` advisory only.
+     */
+    public function open(Connection $connection): bool
     {
         try {
             $this->ensureWithinConnectionLimit($connection);
             $this->verifyOrigin($connection);
+        } catch (Exception $e) {
+            $this->error($connection, $e);
 
+            $connection->terminate();
+
+            return false;
+        }
+
+        try {
             $this->channels->for($connection->app())->incrementConnectionCount();
+
+            $connection->setState(self::ADMITTED, true);
 
             $connection->touch();
 
@@ -53,6 +77,8 @@ class Server
         } catch (Exception $e) {
             $this->error($connection, $e);
         }
+
+        return true;
     }
 
     /**
@@ -133,7 +159,16 @@ class Server
         $scoped = $this->channels->for($connection->app());
 
         $scoped->unsubscribeFromAll($connection);
-        $scoped->decrementConnectionCount();
+
+        // Only decrement for a connection that actually incremented. Rejected
+        // connections never reached the increment in open(), and decrementing
+        // for them walked the counter below the live total, which reset the
+        // `max_connections` quota for everyone on the node.
+        if ($connection->hasState(self::ADMITTED)) {
+            $connection->forgetState(self::ADMITTED);
+
+            $scoped->decrementConnectionCount();
+        }
 
         $connection->disconnect();
 
