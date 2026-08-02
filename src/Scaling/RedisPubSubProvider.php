@@ -243,9 +243,24 @@ class RedisPubSubProvider implements PubSubProvider
     /**
      * Publish a payload to the configured channel.
      *
+     * Redis answers `PUBLISH` with the number of subscribers it delivered the
+     * message to, this node's own subscriber included. `MetricsHandler` treats
+     * every other one as a node that owes it a reply, which lets a gather
+     * finish as soon as the last sibling answers instead of always paying the
+     * full collection window.
+     *
+     * Caveat: under Redis Cluster the reply counts only the clients attached
+     * to the node that handled the command, so a clustered deployment can
+     * under-count and complete a gather before a sibling on another cluster
+     * node has answered. Regular pub/sub is not cluster-aware in general (the
+     * same limitation applies to `PUBSUB NUMSUB`); operators running Resonate
+     * across a Redis Cluster should point the scaling connection at a single
+     * Redis instance.
+     *
      * @param  array<string, mixed>  $payload
+     * @return int<0, max>
      */
-    public function publish(array $payload): void
+    public function publish(array $payload): int
     {
         if ($this->publisher === null) {
             // Silently dropping here meant cross-node broadcasts vanished with
@@ -253,10 +268,10 @@ class RedisPubSubProvider implements PubSubProvider
             // connect() or after disconnect().
             Log::error('Resonate pub/sub publish skipped: not connected.');
 
-            return;
+            return 0;
         }
 
-        $this->publisher->publish($this->channel, json_encode($payload, JSON_THROW_ON_ERROR));
+        return max(0, $this->publisher->publish($this->channel, json_encode($payload, JSON_THROW_ON_ERROR)));
     }
 
     /**

@@ -90,7 +90,11 @@ Rate limits are **per server instance**, so in a horizontally scaled setup, a cl
 
 ### Message size
 
-`apps.apps[].max_message_size` (default `10_000` bytes) caps the size of any individual incoming WebSocket message. Oversized frames are rejected with pusher error code `4019` and never reach the logger, the rate limiter, or the JSON parser. Set to `0` for unlimited.
+`apps.apps[].max_message_size` (default `10_000` bytes) caps the size of any individual incoming WebSocket message. Set to `0` for unlimited.
+
+The limit is enforced twice. The connection's RFC 6455 parser is built from the application resolved during the handshake, so a frame declaring more than that application's limit is refused on its header, with close code `1009`, before a payload byte is buffered. This is what keeps one tenant's generous limit from becoming every tenant's buffering budget on a shared process. The protocol layer then re-checks the assembled message and rejects it with pusher error code `4019`, never reaching the logger, the rate limiter, or the JSON parser.
+
+A connection whose app key resolves to no application is closed with pusher code `4001` immediately, and until then its parser carries the smallest limit configured on the server.
 
 ### Channel and subscription limits
 

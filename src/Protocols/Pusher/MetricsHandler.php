@@ -2,15 +2,15 @@
 
 namespace Webpatser\Resonate\Protocols\Pusher;
 
+use Fledge\Async\DeferredFuture;
 use Illuminate\Support\Str;
+use Revolt\EventLoop;
 use Webpatser\Resonate\Application;
 use Webpatser\Resonate\Contracts\ServerProvider;
 use Webpatser\Resonate\Protocols\Pusher\Channels\ChannelConnection;
 use Webpatser\Resonate\Protocols\Pusher\Concerns\InteractsWithChannelInformation;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Scaling\Contracts\PubSubProvider;
-
-use function Fledge\Async\delay;
 
 /**
  * Gathers channel and connection metrics for the Pusher REST API.
@@ -23,42 +23,75 @@ use function Fledge\Async\delay;
  *  - {@see gather()} keeps its `(Application, string, array): array` signature.
  *    When scaling is off it reads the local {@see ChannelManager} and returns
  *    immediately, identical to the Phase 3 behaviour.
- *  - When scaling is on, `gather()` publishes a `metrics` request envelope,
- *    then suspends the fiber for a bounded collection window via
- *    `Fledge\Async\delay()`. The event loop keeps running, only this fiber
- *    parks. Sibling replies arrive on the pub/sub channel and are routed here
- *    through {@see publish()}, which buffers them keyed by request id. When
- *    the window closes the buffered replies are merged with this node's own
- *    local metrics.
- *  - {@see publish()} is the responder side too: a `metrics` *request* makes
- *    this node gather its local metrics and publish a `metrics` *reply*.
+ *  - When scaling is on, `gather()` publishes a `metrics` request envelope and
+ *    awaits a {@see DeferredFuture} that is completed the moment every
+ *    expected sibling reply has landed, or when the collection window timer
+ *    fires, whichever comes first. The event loop keeps running, only this
+ *    fiber parks. Sibling replies arrive on the pub/sub channel and are routed
+ *    here through {@see publish()}, which buffers them keyed by request id.
+ *    The buffered replies are then merged with this node's own local metrics.
+ *  - {@see publish()} is the responder side too: a `metrics` *request* from a
+ *    *sibling* makes this node gather its local metrics and publish a
+ *    `metrics` *reply*.
  *
  * Nothing here is PHP-`serialize()`d; every envelope field is JSON-native.
  * There is no `PendingMetric` object: a plain array keyed by request id is
  * enough for correlation.
+ *
+ * Two properties of Redis pub/sub drive the design here:
+ *
+ *  - A node receives its own publications. The publisher and the subscriber
+ *    are separate connections, so the request envelope this node sends comes
+ *    straight back to its own subscriber. Without the {@see nodeId()} stamp
+ *    carried in every request, the requesting node answered itself, buffered
+ *    that reply, and then appended `local()` a second time, so `mergeChannel()`
+ *    summed this node's `user_count` and `subscription_count` twice. Two nodes
+ *    with five users each reported fifteen. The responder branch now drops any
+ *    request carrying our own node id, and the explicit local append stays.
+ *  - `PUBLISH` returns the number of subscribers that received the message.
+ *    That is the expected reply count (minus our own subscriber), obtained
+ *    with no extra round-trip and scoped to exactly the envelope just sent.
  */
 class MetricsHandler
 {
     use InteractsWithChannelInformation;
 
     /**
-     * The collection window, in seconds, to wait for sibling replies.
+     * This node's identity, stamped into every request envelope it publishes.
+     *
+     * Random per process rather than derived from the host or pid: a container
+     * host name is not unique across a fleet and pids are recycled, while a
+     * collision here would make one node ignore another's requests.
      */
-    protected float $collectionWindow = 1.0;
+    protected string $nodeId;
 
     /**
-     * Buffered sibling replies, keyed by request id.
+     * In-flight metric requests, keyed by request id.
      *
-     * @var array<string, array<int, array<string|int, mixed>>>
+     * `expected` is null until `PUBLISH` has reported the subscriber count,
+     * which keeps a reply that arrives while the publish is still in flight
+     * from completing the request early.
+     *
+     * @var array<string, array{expected: int|null, sets: array<int, array<string|int, mixed>>, deferred: DeferredFuture<null>}>
      */
-    protected array $replies = [];
+    protected array $pending = [];
 
     /**
      * Create an instance of the metrics handler.
+     *
+     * @param  float  $collectionWindow  Upper bound, in seconds, on the wait for sibling replies.
      */
-    public function __construct(protected ChannelManager $channels)
+    public function __construct(protected ChannelManager $channels, protected float $collectionWindow = 1.0)
     {
-        //
+        $this->nodeId = Str::random(20);
+    }
+
+    /**
+     * Get this node's identity.
+     */
+    public function nodeId(): string
+    {
+        return $this->nodeId;
     }
 
     /**
@@ -102,12 +135,13 @@ class MetricsHandler
      * Publish a metrics envelope routed here by the pub/sub message handler.
      *
      * Two envelope shapes flow through here:
-     *  - a *request* (`payload.type` + `payload.options` set): this node
-     *    gathers its local metrics for the requested type and publishes a
+     *  - a *request* (`payload.type` + `payload.options` set): unless it is
+     *    this node's own request coming back off the pub/sub channel, this
+     *    node gathers its local metrics for the requested type and publishes a
      *    *reply* envelope back onto the pub/sub channel.
      *  - a *reply* (`payload.metrics` set): if this node is currently
      *    awaiting the matching request id, the metrics are appended to that
-     *    request's buffer.
+     *    request's buffer, which may complete the request immediately.
      *
      * @param  array{application: Application, payload: array<string, mixed>}  $envelope
      */
@@ -117,29 +151,35 @@ class MetricsHandler
         $payload = $envelope['payload'];
         $key = $payload['key'] ?? null;
 
-        if ($key === null) {
+        if (! is_string($key)) {
             return;
         }
 
         // A reply for a request this node is awaiting.
         if (array_key_exists('metrics', $payload)) {
-            if (array_key_exists($key, $this->replies)) {
-                $this->replies[$key][] = $payload['metrics'];
-            }
+            $this->recordReply($key, $payload['metrics']);
 
             return;
         }
 
-        // A request from a sibling node: answer with our local metrics.
         if (! isset($payload['type'])) {
             return;
         }
 
+        // Our own request, delivered back to us by our own subscriber. The
+        // local metrics are appended directly in gatherFromSubscribers(), so
+        // answering here would count this node twice.
+        if (($payload['node'] ?? null) === $this->nodeId) {
+            return;
+        }
+
+        // A request from a sibling node: answer with our local metrics.
         app(PubSubProvider::class)->publish([
             'type' => 'metrics',
             'application' => $application->id(),
             'payload' => [
                 'key' => $key,
+                'node' => $this->nodeId,
                 'metrics' => $this->local(
                     $application,
                     MetricType::from($payload['type']),
@@ -159,32 +199,112 @@ class MetricsHandler
     {
         $requestId = Str::random(10);
 
-        $this->replies[$requestId] = [];
+        /** @var DeferredFuture<null> $deferred */
+        $deferred = new DeferredFuture;
+
+        $this->pending[$requestId] = [
+            'expected' => null,
+            'sets' => [],
+            'deferred' => $deferred,
+        ];
+
+        // The window is a plain referenced timer rather than a
+        // `TimeoutCancellation`, which unreferences its watcher: awaiting on
+        // one is a deadlock whenever nothing else is holding the loop open.
+        // Completing (rather than cancelling) also means a node that never
+        // answers costs the window once and still returns what did arrive.
+        $timeout = EventLoop::delay($this->collectionWindow, fn () => $this->complete($requestId));
 
         try {
-            app(PubSubProvider::class)->publish([
+            $receivers = app(PubSubProvider::class)->publish([
                 'type' => 'metrics',
                 'application' => $application->id(),
                 'payload' => [
                     'key' => $requestId,
+                    'node' => $this->nodeId,
                     'type' => $type->value,
                     'options' => $options,
                 ],
             ]);
 
-            // Suspend this fiber for the collection window. The event loop
-            // keeps pumping the pub/sub subscription, so sibling replies land
-            // in $this->replies[$requestId] via publish() while we wait.
-            delay($this->collectionWindow);
+            // Every subscriber that received the envelope owes a reply, except
+            // our own, which drops the request on the node id above.
+            $this->pending[$requestId]['expected'] = max(0, $receivers - 1);
 
-            $sets = $this->replies[$requestId];
+            // A reply can already have landed while the publish was in flight.
+            $this->completeIfSatisfied($requestId);
+
+            if (! $deferred->isComplete()) {
+                // Suspend this fiber until the last expected reply lands, or
+                // the window closes. The event loop keeps pumping the pub/sub
+                // subscription, so replies reach publish() while we wait. The
+                // window is only an upper bound now: a gather whose siblings
+                // all answered in 5ms no longer costs a full second.
+                $deferred->getFuture()->await();
+            }
+
+            $sets = $this->pending[$requestId]['sets'];
         } finally {
-            unset($this->replies[$requestId]);
+            EventLoop::cancel($timeout);
+
+            unset($this->pending[$requestId]);
         }
 
         $sets[] = $this->local($application, $type, $options);
 
         return $this->merge($sets, $type);
+    }
+
+    /**
+     * Buffer a sibling reply against the request it answers.
+     *
+     * A reply for an unknown request id is dropped: either the request already
+     * completed or it belongs to another node. `$metrics` arrives straight off
+     * the wire, so it is only trusted once it is known to be an array.
+     */
+    protected function recordReply(string $key, mixed $metrics): void
+    {
+        if (! array_key_exists($key, $this->pending) || ! is_array($metrics)) {
+            return;
+        }
+
+        $this->pending[$key]['sets'][] = $metrics;
+
+        $this->completeIfSatisfied($key);
+    }
+
+    /**
+     * Complete the given request once every expected reply has been buffered.
+     */
+    protected function completeIfSatisfied(string $key): void
+    {
+        $pending = $this->pending[$key] ?? null;
+
+        if ($pending === null || $pending['expected'] === null) {
+            return;
+        }
+
+        if (count($pending['sets']) < $pending['expected']) {
+            return;
+        }
+
+        $this->complete($key);
+    }
+
+    /**
+     * Release the fiber awaiting the given request.
+     *
+     * Safe to call for a request that already completed or was cleaned up,
+     * which is what makes the window timer and the last reply racing each
+     * other harmless.
+     */
+    protected function complete(string $key): void
+    {
+        $deferred = $this->pending[$key]['deferred'] ?? null;
+
+        if ($deferred !== null && ! $deferred->isComplete()) {
+            $deferred->complete();
+        }
     }
 
     /**

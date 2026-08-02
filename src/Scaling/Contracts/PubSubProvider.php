@@ -7,8 +7,8 @@ namespace Webpatser\Resonate\Scaling\Contracts;
  *
  * Adapted from Reverb's interface: there is no ReactPHP `LoopInterface` (the
  * fledge-fiber Redis client runs on the ambient Revolt loop) and `publish()`
- * returns `void` rather than a `PromiseInterface`, because fledge calls are
- * fiber-blocking, so the fiber suspends, not the loop.
+ * returns the delivered-subscriber count rather than a `PromiseInterface`,
+ * because fledge calls are fiber-blocking, so the fiber suspends, not the loop.
  */
 interface PubSubProvider
 {
@@ -47,7 +47,14 @@ interface PubSubProvider
     /**
      * Publish a payload to the configured channel.
      *
+     * Returns the number of subscribers the backend delivered the payload to,
+     * which includes this node's own subscriber. `MetricsHandler` uses it to
+     * know how many sibling replies to expect, so an implementation that
+     * cannot report a count must return `0`, which degrades gathering to the
+     * full collection window rather than completing early on bad information.
+     *
      * @param  array<string, mixed>  $payload
+     * @return int<0, max>
      */
-    public function publish(array $payload): void;
+    public function publish(array $payload): int;
 }

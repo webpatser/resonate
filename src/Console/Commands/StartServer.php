@@ -21,6 +21,7 @@ use Webpatser\Resonate\Loggers\Log;
 use Webpatser\Resonate\Plugins\PluginManager;
 use Webpatser\Resonate\Scaling\Contracts\PubSubProvider;
 use Webpatser\Resonate\Scheduling\Scheduler;
+use Webpatser\Resonate\Server\ApplicationClientFactory;
 use Webpatser\Resonate\Server\Factory as ServerFactory;
 use Webpatser\Resonate\Server\HttpServer;
 
@@ -91,7 +92,7 @@ class StartServer extends Command implements SignalableCommandInterface
             $config['max_request_size'] ?? 10_000,
             $config['options'] ?? [],
             EventLoop::getDriver(),
-            $this->maxMessageSize(),
+            $this->fallbackMessageSize(),
         );
 
         $this->scheduler = app(Scheduler::class);
@@ -152,20 +153,26 @@ class StartServer extends Command implements SignalableCommandInterface
     }
 
     /**
-     * Resolve the transport-level websocket message size limit.
+     * Resolve the fallback websocket message size limit.
      *
-     * `max_message_size` is configured per app, but the websocket parser limit
-     * is a single global value. Use the largest configured app limit so a frame
-     * that is valid for any app is never rejected at the transport layer; the
-     * precise per-app limit is still enforced in Pusher\Server::message().
+     * Each connection's parser is sized from its own application's
+     * `max_message_size` by {@see ApplicationClientFactory}. This value only
+     * covers an upgrade whose app key does not resolve to an application, so
+     * it is the *smallest* configured limit: an unknown app is closed with
+     * pusher code 4001 the moment the handler takes over, and until then it
+     * should not be able to buffer more than the most restrictive tenant can.
+     *
+     * It used to be the largest configured limit, applied to every connection,
+     * which let a client of a 10KB app buffer up to a 10MB app's limit before
+     * Pusher\Server::message() rejected it, over and over.
      */
-    protected function maxMessageSize(): int
+    protected function fallbackMessageSize(): int
     {
         $sizes = collect($this->laravel['config']['reverb.apps.apps'] ?? [])
             ->map(fn ($app) => (int) ($app['max_message_size'] ?? 0))
             ->filter(fn (int $size) => $size > 0);
 
-        return $sizes->isEmpty() ? 10_000 : (int) $sizes->max();
+        return $sizes->isEmpty() ? 10_000 : (int) $sizes->min();
     }
 
     /**

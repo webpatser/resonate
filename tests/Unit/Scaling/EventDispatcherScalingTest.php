@@ -29,9 +29,11 @@ class RecordingPubSubProvider implements PubSubProvider
 
     public function stopListening(string $event): void {}
 
-    public function publish(array $payload): void
+    public function publish(array $payload): int
     {
         $this->published[] = $payload;
+
+        return 1;
     }
 }
 

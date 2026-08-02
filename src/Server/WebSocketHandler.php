@@ -12,6 +12,7 @@ use Webpatser\Resonate\Exceptions\InvalidApplication;
 use Webpatser\Resonate\Loggers\Log;
 use Webpatser\Resonate\Protocols\Pusher\Server;
 use Webpatser\Resonate\Server\Concerns\ClosesConnections;
+use Webpatser\Resonate\Server\Concerns\ResolvesApplicationKey;
 
 /**
  * Bridges the fledge-fiber WebSocket transport to the Pusher protocol server.
@@ -23,6 +24,7 @@ use Webpatser\Resonate\Server\Concerns\ClosesConnections;
 class WebSocketHandler implements WebsocketClientHandler
 {
     use ClosesConnections;
+    use ResolvesApplicationKey;
 
     /**
      * Create a new WebSocket handler instance.
@@ -76,29 +78,5 @@ class WebSocketHandler implements WebsocketClientHandler
         } finally {
             $this->server->close($connection);
         }
-    }
-
-    /**
-     * Extract the {appKey} route parameter from the request.
-     */
-    protected function appKey(Request $request): ?string
-    {
-        if ($request->hasAttribute(Router::class)) {
-            $arguments = $request->getAttribute(Router::class);
-
-            if (isset($arguments['appKey'])) {
-                return $arguments['appKey'];
-            }
-        }
-
-        // Fallback: derive the key from the request path (/app/{appKey}). The
-        // regex is anchored to the full path and caps the key at 128 chars so
-        // a proxy-injected prefix (e.g. `/foo/app/x`) cannot smuggle a key in,
-        // and an arbitrarily long path segment cannot exhaust the lookup.
-        if (preg_match('#^/app/([^/?]{1,128})$#', $request->getUri()->getPath(), $matches)) {
-            return $matches[1];
-        }
-
-        return null;
     }
 }
