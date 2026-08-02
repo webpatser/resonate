@@ -2,6 +2,7 @@
 
 namespace Webpatser\Resonate\Protocols\Pusher\Channels;
 
+use Throwable;
 use Webpatser\Resonate\Contracts\Connection;
 use Webpatser\Resonate\Loggers\Log;
 use Webpatser\Resonate\Protocols\Pusher\Concerns\SerializesChannels;
@@ -110,7 +111,7 @@ class Channel
                 continue;
             }
 
-            $connection->send($message);
+            $this->sendTo($connection, $message);
         }
     }
 
@@ -125,7 +126,25 @@ class Channel
         Log::message($message);
 
         foreach ($this->connections() as $connection) {
+            $this->sendTo($connection, $message);
+        }
+    }
+
+    /**
+     * Send a message to a single subscriber, isolating its failures.
+     *
+     * A peer that drops between the loop's read and the write throws
+     * `WebsocketClosedException` from deep inside the transport. Uncaught, that
+     * aborted the whole fan-out, so every subscriber after the dead one in the
+     * loop silently missed the event and the publisher got a misleading 4200
+     * "Invalid message format" reply.
+     */
+    protected function sendTo(ChannelConnection $connection, string $message): void
+    {
+        try {
             $connection->send($message);
+        } catch (Throwable $e) {
+            Log::error('Failed to send to '.$connection->id().': '.$e->getMessage());
         }
     }
 
