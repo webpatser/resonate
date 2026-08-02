@@ -50,7 +50,45 @@ php artisan resonate:reload
 php artisan resonate:reload --drain
 ```
 
-Tune the drain window with `REVERB_DRAIN_TIMEOUT` (default `30` seconds). Existing WebSocket clients stay connected to the old process until they disconnect naturally or the timeout fires.
+Tune the drain window with `REVERB_DRAIN_TIMEOUT` (default `30` seconds). Existing WebSocket clients stay connected to the old process until they disconnect naturally or the timeout fires. `--term-timeout` (default `5` seconds) bounds the wait for the old process to exit after SIGTERM; the reload fails rather than reporting success if it is still alive.
+
+`GET /up` returns the PID of the process that answered alongside `health`, so a probe can tell the replacement apart from the outgoing server while both hold the port.
+
+### Runtime files
+
+`resonate:start` writes two files into `storage/`:
+
+| File | Contents |
+|------|----------|
+| `resonate.pid` | The server PID, written once the listening sockets are bound. |
+| `resonate.json` | The PID and the effective host, port and path the server was started with. |
+
+`resonate:reload` reads the metadata file so a replacement inherits the CLI overrides the running server was started with, rather than falling back to config. Metadata belonging to another PID is ignored.
+
+A second `resonate:start` fails while the PID file names a live process, since `SO_REUSEPORT` would otherwise let it bind the same port and split the node into two processes with separate channel state. Pass `--force` to start anyway; `resonate:reload` passes it during a swap.
+
+## Resource limits
+
+Defaults are set for a shared, multi-tenant process. Set any of these to `0` to disable the check.
+
+| Key (under `servers.reverb`) | Environment variable | Default | What it bounds |
+|------|----------------------|---------|----------------|
+| `max_channel_name_length` | `REVERB_MAX_CHANNEL_NAME_LENGTH` | `255` | Length of a channel name a client may subscribe to. Over-long names are rejected with pusher code `4200`. Pusher itself caps names at 164 characters. |
+| `max_subscriptions_per_connection` | `REVERB_MAX_SUBSCRIPTIONS_PER_CONNECTION` | `250` | Distinct channels one connection may hold. An over-cap subscribe is rejected with pusher code `4302`; the connection and its existing subscriptions stay intact. |
+| `max_outbound_queue_size` | `REVERB_MAX_OUTBOUND_QUEUE_SIZE` | `1000` | Messages that may wait on one connection. Exceeding it closes the connection with WebSocket code `1013`. |
+| `scaling.max_queued_messages` | `REVERB_SCALING_MAX_QUEUED_MESSAGES` | `10000` | Inbound pub/sub envelopes waiting to be handled. Envelopes arriving while the queue is full are dropped and logged. |
+
+### Outbound queues
+
+Every connection owns an outbound queue drained by a single writer fiber. `send()` queues and returns, so a client that stops reading its socket suspends only its own writer instead of stalling the channel fan-out and whatever issued the broadcast. One writer per connection keeps frames in the order they were queued.
+
+The bound exists because unbounded buffering trades a stall for memory exhaustion. Budget for it as the bound multiplied by your average payload multiplied by the number of connections that can fall behind at once. A connection closed with `1013` reconnects and resubscribes on its own, which is standard Pusher client behaviour.
+
+### Message size
+
+`apps.apps[].max_message_size` (default `10_000` bytes) is enforced per application. The application is known during the handshake, so each connection's RFC 6455 parser carries its own application's limit and an oversized frame is refused on its header with close code `1009`, before a payload byte is buffered. The protocol layer re-checks the assembled message and rejects it with pusher code `4019`.
+
+The server-wide limit is now the smallest limit configured across your applications, and it governs only an upgrade whose app key resolves to no application. Such a connection is closed with pusher code `4001` as soon as the handler takes over.
 
 ## Horizontal scaling
 

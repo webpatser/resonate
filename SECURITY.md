@@ -10,7 +10,7 @@ You can expect an acknowledgement within seven days. Once a fix is available it 
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x   | yes       |
+| 0.6.x   | yes       |
 
 ## Threat model
 
@@ -35,11 +35,13 @@ The canonical string is unescaped `key=value` pairs joined with `&`, which is wh
 - a non-scalar (array or nested array) signed query parameter. `a[]=x&a[]=y` used to canonicalize identically to `a=x,y`, and a nested array stringified to the literal `Array`, so its values were never signed.
 - a signed key or value containing `&`, `=`, `\n` or `\r`. Without escaping these are indistinguishable from the separators, so a caller who influences one signed value could smuggle in or delete other signed parameters and land on the same signed string.
 
-Neither shape is produced by `pusher/pusher-php-server`.
+Neither shape is produced by `pusher/pusher-php-server`. The check covers the signed parameters only: `auth_signature`, `body_md5`, `body_sha256` and the route parameters (`appId`, `appKey`, `channelName`) are excluded, as they are not part of the canonical string.
 
 #### Body binding
 
 `body_md5` is a Pusher wire-protocol field and is still accepted, because every stock client sends it. A client that also (or instead) signs `body_sha256` gets that bound; when both are present both are bound, so the stronger digest has to hold too. Whichever digest the request carries is recomputed from the body actually received, so a swapped body fails verification.
+
+A digest carried on a request with an empty body is bound to the digest of the empty string rather than dropped, so a signed bodyless request cannot have a body added to it.
 
 ### Origin verification
 
@@ -80,13 +82,15 @@ Counted in the in-memory `array` cache store, so the counter cannot be tampered 
 
 The remote address is the TCP peer: behind a reverse proxy every connection reports the proxy's address, and the client dimension then applies to the proxy as a whole. Resonate does not read `X-Forwarded-For`. When the transport reports no address at all, only the connection dimension exists and a reconnect does start over.
 
-`max_attempts` and `decay_seconds` are validated at boot when `enabled` is true. A missing value used to be read as `null`, which rejected every message after the second one.
+When `enabled` is true, `max_attempts` and `decay_seconds` must each be a positive integer. Both are validated when the `Application` is built and again at server boot against the raw config, so `resonate:start` fails naming the offending key rather than starting a bricked application. A missing value used to be read as `null`, which rejected every message after the second one.
 
 Rate limits are **per server instance**, so in a horizontally scaled setup, a client can spend its budget on each node independently. Configure conservatively if the difference matters to you.
 
 ### Connection limits
 
 `apps.apps[].max_connections` is enforced at `open()` time per application, per node. The limit counts open WebSocket connections (not just connections subscribed to a channel) so an unsubscribed client still occupies a slot. Set it for production deployments.
+
+Open connections are tracked in `ChannelRegistry` by application and socket id rather than derived from channel membership, so a client that completes the handshake and never subscribes is still pinged, marked stale and pruned. Holding sockets open and staying silent is no longer a way to exhaust a node. A connection rejected by the origin allow-list or by `max_connections` is terminated rather than left usable, and only an admitted connection is counted against the limit.
 
 ### Message size
 
