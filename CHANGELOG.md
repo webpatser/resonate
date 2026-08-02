@@ -74,11 +74,8 @@ Set any of them to `0` to disable the check.
 
 ### Fixed
 
-- Defer shutdown to the event loop instead of returning an exit code from the signal handler, which terminated the process before the drain window elapsed and left the PID file behind.
-- Close connections rejected by the origin allow-list or `max_connections` instead of leaving them fully usable, and decrement the per-application counter only for admitted connections.
 - Track open connections in `ChannelRegistry` rather than deriving them from channel membership, so a client that completed the handshake and never subscribed is pinged, marked stale and pruned.
 - Isolate broadcast failures per subscriber: a peer that dropped mid-fan-out threw from the transport, aborting the loop so later subscribers missed the event and the publisher got a misleading `4200` reply.
-- Retry the Redis pub/sub subscription with exponential backoff (0.5s to a 10s ceiling), so a Redis restart no longer leaves the node publishing while silently receiving nothing.
 - Report the answering process's PID from `GET /up`, so a reload cannot mistake the still-listening old server for a replacement that died during boot and end with zero servers on the node.
 - Record the running server's effective host, port and path in `storage/resonate.json` and thread them through a reload, which previously respawned a bare `resonate:start` on the configured port.
 - Poll for the old server's exit after SIGTERM (`--term-timeout`, five seconds by default) and report failure when it is still alive, instead of returning success unconditionally.
@@ -118,13 +115,28 @@ Set any of them to `0` to disable the check.
 - `Factory::make()` and `makeRouter()` rename `$maxMessageSize` to `$fallbackMessageSize`, matching what the value now governs.
 - `Connection::send()` and `ping()` enqueue and return rather than awaiting the socket; `close()` is ordered behind the queue so pending frames flush first.
 - `MetricsHandler::__construct()` takes the collection window as a second argument (default `1.0` seconds, unchanged).
-- CI runs Pint and PHPStan (level 7, no baseline and no ignores) and starts a Redis service, so the previously self-skipping scaling integration tests run.
-- `ChannelConnection` documents its proxied methods with `@method` tags, and several docblocks were corrected, including the `$applications` shape in `ArrayChannelManager`.
+- Raise PHPStan from level 5 to level 7, with accurate array shapes and generics throughout, still with no baseline and no ignores.
 
 ### Removed
 
 - `Concerns\InteractsWithApplications`. The trait supplied only the mutable `for()` that immutable scoping replaces.
 - `ChannelManager::incrementConnectionCount()` and `decrementConnectionCount()`, replaced by `addConnection()` and `removeConnection()`.
+
+## v0.5.1 - 2026-07-30
+
+Three defects that broke or defeated something in every deployment, plus the CI gates that keep them from returning.
+
+### Fixed
+
+- Defer shutdown to the event loop instead of returning an exit code from the signal handler, which terminated the process before the drain window elapsed and left the PID file behind. Every reload and every SIGTERM severed live connections with no close handshake.
+- Close connections rejected by the origin allow-list or `max_connections` instead of leaving them fully usable, and decrement the per-application counter only for admitted connections. Opening and dropping rejected connections walked the count below the live total and reset the quota.
+- Retry the Redis pub/sub subscription with exponential backoff (0.5s to a 10s ceiling), so a Redis restart no longer leaves the node publishing while silently receiving nothing until restarted.
+
+### Changed
+
+- `Protocols\Pusher\Server::open()` returns `bool` rather than `void`, reporting whether the connection was admitted. Rejected connections are terminated before the handler's receive loop.
+- CI runs Pint and PHPStan (level 5, no baseline and no ignores) and starts a Redis service, so the previously self-skipping scaling integration tests run.
+- `ChannelConnection` documents its proxied methods with `@method` tags, and several docblocks were corrected, including the `$applications` shape in `ArrayChannelManager`.
 
 ## v0.5.0 - 2026-07-22
 
