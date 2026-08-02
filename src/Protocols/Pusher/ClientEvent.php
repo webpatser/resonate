@@ -59,7 +59,7 @@ class ClientEvent
             return;
         }
 
-        $channel = app(ChannelManager::class)->find($event['channel']);
+        $channel = app(ChannelManager::class)->for($connection->app())->find($event['channel']);
 
         $channelConnection = $channel?->find($connection);
 

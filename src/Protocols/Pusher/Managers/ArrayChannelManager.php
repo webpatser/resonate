@@ -3,8 +3,8 @@
 namespace Webpatser\Resonate\Protocols\Pusher\Managers;
 
 use Illuminate\Support\Arr;
+use RuntimeException;
 use Webpatser\Resonate\Application;
-use Webpatser\Resonate\Concerns\InteractsWithApplications;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
 use Webpatser\Resonate\Contracts\Connection;
 use Webpatser\Resonate\Events\ChannelCreated;
@@ -14,34 +14,41 @@ use Webpatser\Resonate\Protocols\Pusher\Channels\ChannelBroker;
 use Webpatser\Resonate\Protocols\Pusher\Channels\ChannelConnection;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager as ChannelManagerInterface;
 
+/**
+ * An immutable, per-application view over the shared {@see ChannelRegistry}.
+ *
+ * `for()` returns a NEW view rather than re-scoping this one. That matters
+ * because the container binds one manager for the whole process while every
+ * connection runs in its own fiber: when `for()` mutated a shared instance,
+ * any suspension between scoping and a later read let another fiber re-scope
+ * it underneath the first, so a request could read, count, or disconnect
+ * another tenant's connections. Holding a view is now safe across suspension
+ * points, because nothing can change what it points at.
+ *
+ * The container-bound instance is unscoped. Calling a scoped method on it
+ * throws instead of silently inheriting whichever application happened to be
+ * set last.
+ */
 class ArrayChannelManager implements ChannelManagerInterface
 {
-    use InteractsWithApplications;
+    public function __construct(
+        protected ChannelRegistry $registry = new ChannelRegistry,
+        protected ?Application $application = null,
+    ) {
+        //
+    }
 
     /**
-     * The underlying array of applications and their channels.
+     * Get a view of the manager scoped to the given application.
      *
-     * @var array<string, array<string, Channel>>
+     * Deliberately `self` rather than `static`: a subclass is free to change
+     * the constructor, so building one here would be unsafe. Subclasses that
+     * need their own view type should override this method.
      */
-    protected $applications = [];
-
-    /**
-     * Per-application open-connection counts keyed by application ID.
-     *
-     * Tracked independently of channel subscription so the connection
-     * limit covers connections that complete the WS handshake but never
-     * send a `pusher:subscribe`.
-     *
-     * @var array<string, int>
-     */
-    protected $connectionCounts = [];
-
-    /**
-     * The application instance.
-     *
-     * @var Application
-     */
-    protected $application;
+    public function for(Application $application): ChannelManagerInterface
+    {
+        return new self($this->registry, $application);
+    }
 
     /**
      * Get the application instance.
@@ -52,13 +59,29 @@ class ArrayChannelManager implements ChannelManagerInterface
     }
 
     /**
+     * Get the ID of the application this view is scoped to.
+     *
+     * @throws RuntimeException When the view has no application.
+     */
+    protected function applicationId(): string
+    {
+        if ($this->application === null) {
+            throw new RuntimeException(
+                'The channel manager must be scoped to an application with for() before use.'
+            );
+        }
+
+        return $this->application->id();
+    }
+
+    /**
      * Get all the channels.
      *
      * @return array<string, Channel>
      */
     public function all(): array
     {
-        return $this->channels();
+        return $this->registry->channels($this->applicationId());
     }
 
     /**
@@ -66,7 +89,7 @@ class ArrayChannelManager implements ChannelManagerInterface
      */
     public function exists(string $channel): bool
     {
-        return isset($this->applications[$this->application->id()][$channel]);
+        return $this->registry->has($this->applicationId(), $channel);
     }
 
     /**
@@ -74,7 +97,7 @@ class ArrayChannelManager implements ChannelManagerInterface
      */
     public function find(string $channel): ?Channel
     {
-        return $this->channels($channel);
+        return $this->registry->channel($this->applicationId(), $channel);
     }
 
     /**
@@ -88,7 +111,7 @@ class ArrayChannelManager implements ChannelManagerInterface
 
         $channel = ChannelBroker::create($channelName);
 
-        $this->applications[$this->application->id()][$channel->name()] = $channel;
+        $this->registry->put($this->applicationId(), $channel);
 
         ChannelCreated::dispatch($channel);
 
@@ -118,7 +141,7 @@ class ArrayChannelManager implements ChannelManagerInterface
      */
     public function findConnection(string $socketId): ?ChannelConnection
     {
-        foreach ($this->channels() as $channel) {
+        foreach ($this->all() as $channel) {
             if ($connection = $channel->connections()[$socketId] ?? null) {
                 return $connection;
             }
@@ -132,9 +155,7 @@ class ArrayChannelManager implements ChannelManagerInterface
      */
     public function incrementConnectionCount(): void
     {
-        $id = $this->application->id();
-
-        $this->connectionCounts[$id] = ($this->connectionCounts[$id] ?? 0) + 1;
+        $this->registry->increment($this->applicationId());
     }
 
     /**
@@ -142,9 +163,7 @@ class ArrayChannelManager implements ChannelManagerInterface
      */
     public function decrementConnectionCount(): void
     {
-        $id = $this->application->id();
-
-        $this->connectionCounts[$id] = max(0, ($this->connectionCounts[$id] ?? 0) - 1);
+        $this->registry->decrement($this->applicationId());
     }
 
     /**
@@ -152,7 +171,7 @@ class ArrayChannelManager implements ChannelManagerInterface
      */
     public function connectionCount(): int
     {
-        return $this->connectionCounts[$this->application->id()] ?? 0;
+        return $this->registry->count($this->applicationId());
     }
 
     /**
@@ -160,7 +179,7 @@ class ArrayChannelManager implements ChannelManagerInterface
      */
     public function unsubscribeFromAll(Connection $connection): void
     {
-        foreach ($this->channels() as $channel) {
+        foreach ($this->all() as $channel) {
             $channel->unsubscribe($connection);
         }
     }
@@ -170,7 +189,7 @@ class ArrayChannelManager implements ChannelManagerInterface
      */
     public function remove(Channel $channel): void
     {
-        unset($this->applications[$this->application->id()][$channel->name()]);
+        $this->registry->forget($this->applicationId(), $channel->name());
 
         ChannelRemoved::dispatch($channel);
     }
@@ -180,7 +199,7 @@ class ArrayChannelManager implements ChannelManagerInterface
      */
     public function channel(string $channel): ?Channel
     {
-        return $this->channels($channel);
+        return $this->find($channel);
     }
 
     /**
@@ -190,13 +209,11 @@ class ArrayChannelManager implements ChannelManagerInterface
      */
     public function channels(?string $channel = null): Channel|array|null
     {
-        $channels = $this->applications[$this->application->id()] ?? [];
-
         if (isset($channel)) {
-            return $channels[$channel] ?? null;
+            return $this->find($channel);
         }
 
-        return $channels;
+        return $this->all();
     }
 
     /**
@@ -204,11 +221,10 @@ class ArrayChannelManager implements ChannelManagerInterface
      */
     public function flush(): void
     {
-        app(ApplicationProvider::class)
-            ->all()
-            ->each(function (Application $application) {
-                $this->applications[$application->id()] = [];
-                $this->connectionCounts[$application->id()] = 0;
-            });
+        $this->registry->flush(
+            app(ApplicationProvider::class)
+                ->all()
+                ->map(fn (Application $application) => $application->id())
+        );
     }
 }
