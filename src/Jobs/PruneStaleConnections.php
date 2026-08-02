@@ -22,7 +22,13 @@ class PruneStaleConnections
         app(ApplicationProvider::class)
             ->all()
             ->each(function ($application) use ($channels) {
-                foreach ($channels->for($application)->connections() as $connection) {
+                $scoped = $channels->for($application);
+
+                // Every open connection, not just the subscribed ones. A
+                // connection that never sent `pusher:subscribe` belongs to no
+                // channel, so walking channel membership left it holding a slot
+                // forever no matter how long it had been unresponsive.
+                foreach ($scoped->openConnections() as $connection) {
                     if (! $connection->isStale()) {
                         continue;
                     }
@@ -35,9 +41,9 @@ class PruneStaleConnections
                         ]),
                     ]));
 
-                    $channels
-                        ->for($connection->app())
-                        ->unsubscribeFromAll($connection->connection());
+                    $scoped->unsubscribeFromAll($connection);
+
+                    $scoped->removeConnection($connection);
 
                     $connection->disconnect();
 

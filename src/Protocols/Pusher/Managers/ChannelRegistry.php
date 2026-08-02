@@ -2,10 +2,11 @@
 
 namespace Webpatser\Resonate\Protocols\Pusher\Managers;
 
+use Webpatser\Resonate\Contracts\Connection;
 use Webpatser\Resonate\Protocols\Pusher\Channels\Channel;
 
 /**
- * The shared channel and connection-count state for every application.
+ * The shared channel and open-connection state for every application.
  *
  * This exists so that {@see ArrayChannelManager} can be an immutable per-application
  * view rather than a singleton carrying a mutable scope. The registry is the one
@@ -22,14 +23,19 @@ class ChannelRegistry
     protected array $channels = [];
 
     /**
-     * Open-connection counts keyed by application ID.
+     * Open connections keyed by application ID and then by socket ID.
      *
-     * Tracked independently of channel subscription so the connection limit
-     * covers connections that complete the handshake but never subscribe.
+     * This is the single source of truth for who is connected. Channel
+     * membership is not: a connection that completes the handshake and never
+     * sends `pusher:subscribe` belongs to no channel, so deriving the open set
+     * from channels made it invisible to the ping and prune jobs while it still
+     * held a slot against `max_connections` and the transport's global limit.
+     * Protocol-level pings do not save it either, because browsers answer those
+     * automatically without the server learning anything about liveness.
      *
-     * @var array<string, int>
+     * @var array<string, array<string, Connection>>
      */
-    protected array $connectionCounts = [];
+    protected array $connections = [];
 
     /**
      * Get every channel for the given application.
@@ -74,19 +80,33 @@ class ChannelRegistry
     }
 
     /**
-     * Increment the open-connection count for the given application.
+     * Register an open connection for the given application.
      */
-    public function increment(string $applicationId): void
+    public function addConnection(string $applicationId, Connection $connection): void
     {
-        $this->connectionCounts[$applicationId] = $this->count($applicationId) + 1;
+        $this->connections[$applicationId][$connection->id()] = $connection;
     }
 
     /**
-     * Decrement the open-connection count for the given application.
+     * Remove an open connection from the given application.
+     *
+     * Keying by socket ID makes this idempotent: a connection pruned by the
+     * stale sweep and then closed by the transport is removed once, so the
+     * count can no longer drift below the live total.
      */
-    public function decrement(string $applicationId): void
+    public function removeConnection(string $applicationId, Connection $connection): void
     {
-        $this->connectionCounts[$applicationId] = max(0, $this->count($applicationId) - 1);
+        unset($this->connections[$applicationId][$connection->id()]);
+    }
+
+    /**
+     * Get every open connection for the given application.
+     *
+     * @return array<string, Connection>
+     */
+    public function openConnections(string $applicationId): array
+    {
+        return $this->connections[$applicationId] ?? [];
     }
 
     /**
@@ -94,11 +114,11 @@ class ChannelRegistry
      */
     public function count(string $applicationId): int
     {
-        return $this->connectionCounts[$applicationId] ?? 0;
+        return count($this->openConnections($applicationId));
     }
 
     /**
-     * Reset the channels and counts for the given application IDs.
+     * Reset the channels and open connections for the given application IDs.
      *
      * @param  iterable<string>  $applicationIds
      */
@@ -106,7 +126,7 @@ class ChannelRegistry
     {
         foreach ($applicationIds as $applicationId) {
             $this->channels[$applicationId] = [];
-            $this->connectionCounts[$applicationId] = 0;
+            $this->connections[$applicationId] = [];
         }
     }
 }

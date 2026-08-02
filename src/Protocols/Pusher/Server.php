@@ -35,8 +35,8 @@ class Server
     /**
      * The connection state key recording that a connection passed admission.
      *
-     * Only an admitted connection incremented the per-application counter, so
-     * only an admitted connection may decrement it on close.
+     * Only an admitted connection was registered with the per-application
+     * connection list, so only an admitted connection is removed on close.
      */
     public const ADMITTED = 'resonate.admitted';
 
@@ -63,7 +63,7 @@ class Server
         }
 
         try {
-            $this->channels->for($connection->app())->incrementConnectionCount();
+            $this->channels->for($connection->app())->addConnection($connection);
 
             $connection->setState(self::ADMITTED, true);
 
@@ -160,14 +160,14 @@ class Server
 
         $scoped->unsubscribeFromAll($connection);
 
-        // Only decrement for a connection that actually incremented. Rejected
-        // connections never reached the increment in open(), and decrementing
-        // for them walked the counter below the live total, which reset the
+        // Only release a connection that was actually registered. Rejected
+        // connections never reached the registration in open(), and releasing
+        // them walked the count below the live total, which reset the
         // `max_connections` quota for everyone on the node.
         if ($connection->hasState(self::ADMITTED)) {
             $connection->forgetState(self::ADMITTED);
 
-            $scoped->decrementConnectionCount();
+            $scoped->removeConnection($connection);
         }
 
         $connection->disconnect();

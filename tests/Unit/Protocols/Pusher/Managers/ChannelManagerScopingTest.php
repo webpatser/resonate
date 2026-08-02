@@ -4,6 +4,7 @@ use Webpatser\Resonate\Application;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\Managers\ArrayChannelManager;
+use Webpatser\Resonate\Tests\Fakes\FakeConnection;
 
 /*
  * The channel manager is a container singleton, but every connection runs in
@@ -81,7 +82,7 @@ it('shares state between two views of the same application', function () {
     $second = $this->manager->for($application);
 
     $first->findOrCreate('private-shared');
-    $first->incrementConnectionCount();
+    $first->addConnection(new FakeConnection);
 
     // Distinct view objects, one underlying registry.
     expect($second)->not->toBe($first)
@@ -102,9 +103,9 @@ it('counts connections per application rather than globally', function () {
         maxMessageSize: 10_000,
     );
 
-    $this->manager->for($application)->incrementConnectionCount();
-    $this->manager->for($application)->incrementConnectionCount();
-    $this->manager->for($other)->incrementConnectionCount();
+    $this->manager->for($application)->addConnection(new FakeConnection);
+    $this->manager->for($application)->addConnection(new FakeConnection);
+    $this->manager->for($other)->addConnection(new FakeConnection);
 
     expect($this->manager->for($application)->connectionCount())->toBe(2)
         ->and($this->manager->for($other)->connectionCount())->toBe(1);

@@ -66,6 +66,26 @@ function validAuth(string $connectionId, string $channel, ?string $data = null):
 }
 
 /**
+ * Register a connection as open, optionally subscribing it to a channel.
+ *
+ * Mirrors what `Server::open()` does at admission. Subscribing alone is not
+ * enough: the open-connection list, not channel membership, is what the ping
+ * and prune jobs walk.
+ */
+function openConnection(?string $channel = null, ?Application $app = null): FakeConnection
+{
+    $connection = new FakeConnection;
+
+    channels($app)->addConnection($connection);
+
+    if ($channel !== null) {
+        channels($app)->findOrCreate($channel)->subscribe($connection);
+    }
+
+    return $connection;
+}
+
+/**
  * Return the channel manager scoped to an application.
  */
 function channels(?Application $app = null): ChannelManager

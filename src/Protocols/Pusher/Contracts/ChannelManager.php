@@ -54,14 +54,24 @@ interface ChannelManager
     public function findConnection(string $socketId): ?ChannelConnection;
 
     /**
-     * Increment the open-connection counter for the current application.
+     * Register an open connection for the current application.
      */
-    public function incrementConnectionCount(): void;
+    public function addConnection(Connection $connection): void;
 
     /**
-     * Decrement the open-connection counter for the current application.
+     * Remove an open connection from the current application.
      */
-    public function decrementConnectionCount(): void;
+    public function removeConnection(Connection $connection): void;
+
+    /**
+     * Get every open connection for the current application, keyed by socket id.
+     *
+     * Unlike connections(), this is not derived from channel membership, so a
+     * connection that never subscribed to anything is still listed.
+     *
+     * @return array<string, Connection>
+     */
+    public function openConnections(): array;
 
     /**
      * Get the number of open connections for the current application.

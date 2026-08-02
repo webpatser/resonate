@@ -38,6 +38,21 @@ it('admits a valid connection and counts it once', function () {
         ->and($connection->wasTerminated)->toBeFalse();
 });
 
+it('lists an admitted connection that never subscribed to a channel', function () {
+    $connection = new FakeConnection;
+
+    $this->server->open($connection);
+
+    $scoped = $this->channels->for($connection->app());
+
+    // Nothing was subscribed, so channel membership is empty. The open list is
+    // not: it is what the ping and prune jobs walk, and before the fix a
+    // connection like this one was invisible to both while holding a slot.
+    expect($scoped->connections())->toBeEmpty()
+        ->and($scoped->openConnections())->toHaveKey($connection->id())
+        ->and($scoped->openConnections()[$connection->id()])->toBe($connection);
+});
+
 it('releases the count when an admitted connection closes', function () {
     $connection = new FakeConnection;
 

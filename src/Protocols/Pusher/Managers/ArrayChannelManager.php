@@ -151,19 +151,32 @@ class ArrayChannelManager implements ChannelManagerInterface
     }
 
     /**
-     * Increment the open-connection counter for the current application.
+     * Register an open connection for the current application.
      */
-    public function incrementConnectionCount(): void
+    public function addConnection(Connection $connection): void
     {
-        $this->registry->increment($this->applicationId());
+        $this->registry->addConnection($this->applicationId(), $connection);
     }
 
     /**
-     * Decrement the open-connection counter for the current application.
+     * Remove an open connection from the current application.
      */
-    public function decrementConnectionCount(): void
+    public function removeConnection(Connection $connection): void
     {
-        $this->registry->decrement($this->applicationId());
+        $this->registry->removeConnection($this->applicationId(), $connection);
+    }
+
+    /**
+     * Get every open connection for the current application, keyed by socket ID.
+     *
+     * Unlike {@see connections()} this does not derive its answer from channel
+     * membership, so a connection that never subscribed is still listed.
+     *
+     * @return array<string, Connection>
+     */
+    public function openConnections(): array
+    {
+        return $this->registry->openConnections($this->applicationId());
     }
 
     /**
