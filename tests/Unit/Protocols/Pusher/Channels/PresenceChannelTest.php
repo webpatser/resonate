@@ -201,7 +201,7 @@ it('rejects a subscribe with tampered channel_data', function () {
     $signedData = '{"user_id":"1"}';
     $auth = validAuth($this->connection->id(), 'presence-test-channel', $signedData);
 
-    // Subscribe with different channel_data — the HMAC is bound to the original.
+    // Subscribe with different channel_data; the HMAC is bound to the original.
     $channel->subscribe($this->connection, $auth, '{"user_id":"2"}');
 })->throws(ConnectionUnauthorized::class);
 

@@ -149,7 +149,7 @@ it('accepts a punycode origin against the punycode pattern', function () {
 it('does NOT match a non-normalized unicode origin against a punycode pattern', function () {
     $this->app['config']->set('reverb.apps.apps.0.allowed_origins', ['xn--exmple-cua.com']);
 
-    // `exämple.com` does not get punycoded by the server — operators must send the punycode form.
+    // `exämple.com` does not get punycoded by the server, so operators must send the punycode form.
     $this->server->open($connection = new FakeConnection(origin: 'https://exämple.com'));
 
     assertOriginRejected($connection);

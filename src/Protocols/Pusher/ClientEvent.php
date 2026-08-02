@@ -44,7 +44,7 @@ class ClientEvent
         }
 
         // The Pusher protocol only permits client events on private-* and presence-* channels.
-        // This applies in both 'all' and 'members' modes — the difference between the modes is
+        // This applies in both 'all' and 'members' modes; the difference between the modes is
         // only how the membership claim is sourced, never whether the channel type is checked
         // or whether the sender must be subscribed.
         if (! Str::startsWith($event['channel'], ['private-', 'presence-'])) {
