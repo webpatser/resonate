@@ -29,7 +29,7 @@ trait ClosesConnections
         }
 
         try {
-            $client->sendText(json_encode([
+            $client->sendText((string) json_encode([
                 'event' => 'pusher:error',
                 'data' => json_encode([
                     'code' => $code,

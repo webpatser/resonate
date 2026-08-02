@@ -22,7 +22,10 @@ class Request
     /**
      * The parsed query string parameters.
      *
-     * @var array<string, mixed>|null
+     * Keyed by array-key rather than string: parse_str() turns a numeric
+     * parameter name such as `?0=foo` into an integer key.
+     *
+     * @var array<array-key, mixed>|null
      */
     protected ?array $query = null;
 
@@ -100,7 +103,7 @@ class Request
     /**
      * Get all of the query string parameters.
      *
-     * @return array<string, mixed>
+     * @return array<array-key, mixed>
      */
     public function query(): array
     {

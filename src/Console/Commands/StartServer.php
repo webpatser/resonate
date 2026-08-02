@@ -3,6 +3,7 @@
 namespace Webpatser\Resonate\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Support\Facades\Cache;
 use Laravel\Pulse\Pulse;
 use Laravel\Telescope\Contracts\EntriesRepository;
@@ -83,7 +84,8 @@ class StartServer extends Command implements SignalableCommandInterface
             $this->laravel->instance(Logger::class, new CliLogger($this->output));
         }
 
-        $config = $this->laravel['config']['reverb.servers.reverb'];
+        /** @var array<string, mixed> $config */
+        $config = $this->configRepository()->get('reverb.servers.reverb');
 
         $this->server = ServerFactory::make(
             $host = $this->option('host') ?: $config['host'],
@@ -132,6 +134,20 @@ class StartServer extends Command implements SignalableCommandInterface
     }
 
     /**
+     * Get the application's configuration repository.
+     *
+     * Equivalent to `$this->laravel['config']`, which the container resolves
+     * through the same `make()` call, but with a type the analyser can follow.
+     */
+    protected function configRepository(): ConfigRepository
+    {
+        /** @var ConfigRepository $config */
+        $config = $this->laravel->make('config');
+
+        return $config;
+    }
+
+    /**
      * Get the first configured application error, if any.
      *
      * Validated against the raw config rather than through the application
@@ -140,7 +156,10 @@ class StartServer extends Command implements SignalableCommandInterface
      */
     protected function applicationConfigurationError(): ?string
     {
-        foreach ($this->laravel['config']['reverb.apps.apps'] ?? [] as $index => $app) {
+        /** @var array<array-key, array<string, mixed>> $apps */
+        $apps = $this->configRepository()->get('reverb.apps.apps') ?? [];
+
+        foreach ($apps as $index => $app) {
             try {
                 ResonateApplication::ensureRateLimitingIsValid(
                     $app['rate_limiting'] ?? null,
@@ -170,7 +189,10 @@ class StartServer extends Command implements SignalableCommandInterface
      */
     protected function fallbackMessageSize(): int
     {
-        $sizes = collect($this->laravel['config']['reverb.apps.apps'] ?? [])
+        /** @var array<array-key, array<string, mixed>> $apps */
+        $apps = $this->configRepository()->get('reverb.apps.apps') ?? [];
+
+        $sizes = collect($apps)
             ->map(fn ($app) => (int) ($app['max_message_size'] ?? 0))
             ->filter(fn (int $size) => $size > 0);
 
@@ -327,7 +349,7 @@ class StartServer extends Command implements SignalableCommandInterface
     public function handleSignal(int $signal = 0, int|false $previousExitCode = 0): int|false
     {
         if (defined('SIGUSR2') && $signal === SIGUSR2) {
-            $timeout = (int) ($this->laravel['config']['reverb.servers.reverb.drain_timeout'] ?? 30);
+            $timeout = (int) ($this->configRepository()->get('reverb.servers.reverb.drain_timeout') ?? 30);
 
             EventLoop::defer(function () use ($timeout) {
                 $this->components->info("Draining the server (timeout: {$timeout}s).");

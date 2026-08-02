@@ -326,8 +326,8 @@ class MetricsHandler
     /**
      * Merge multiple channel info sets into a single set.
      *
-     * @param  array<int, array<string, mixed>>  $sets
-     * @return array<string, mixed>
+     * @param  array<int, array<array-key, mixed>>  $sets
+     * @return array<array-key, mixed>
      */
     protected function mergeChannel(array $sets): array
     {
@@ -348,8 +348,8 @@ class MetricsHandler
     /**
      * Merge multiple sets of channel info into a single result set.
      *
-     * @param  array<int, array<string, array<string, mixed>>>  $sets
-     * @return array<string, array<string, mixed>>
+     * @param  array<int, array<array-key, mixed>>  $sets
+     * @return array<array-key, array<array-key, mixed>>
      */
     protected function mergeChannels(array $sets): array
     {

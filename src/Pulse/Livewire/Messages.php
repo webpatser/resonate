@@ -20,6 +20,8 @@ class Messages extends Card
 
     /**
      * The graph colors.
+     *
+     * @var array<string, string>
      */
     public array $colors = [
         'received' => '#10b981',
@@ -30,6 +32,8 @@ class Messages extends Card
 
     /**
      * Render the component.
+     *
+     * @return \Illuminate\Contracts\View\View
      */
     #[Lazy]
     public function render()

@@ -18,6 +18,8 @@ class Connections extends Card
 
     /**
      * The graph colors.
+     *
+     * @var array<string, string>
      */
     public array $colors = [
         'avg' => '#10b981',
@@ -26,6 +28,8 @@ class Connections extends Card
 
     /**
      * Render the component.
+     *
+     * @return \Illuminate\Contracts\View\View
      */
     #[Lazy]
     public function render()

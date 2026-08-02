@@ -37,6 +37,8 @@ class ChannelConnection
 {
     /**
      * Create a new channel connection instance.
+     *
+     * @param  array<string, mixed>  $data
      */
     public function __construct(protected Connection $connection, protected array $data = [])
     {
@@ -69,6 +71,8 @@ class ChannelConnection
 
     /**
      * Proxy the given method to the underlying connection.
+     *
+     * @param  array<int, mixed>  $parameters
      */
     public function __call(string $method, array $parameters): mixed
     {

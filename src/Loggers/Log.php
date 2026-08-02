@@ -23,7 +23,7 @@ class Log
      * Proxy method calls to the logger instance.
      *
      * @param  string  $method
-     * @param  array  $arguments
+     * @param  array<int, mixed>  $arguments
      * @return mixed
      */
     public static function __callStatic($method, $arguments)

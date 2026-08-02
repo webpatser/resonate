@@ -8,11 +8,15 @@ class CacheChannel extends Channel
 {
     /**
      * Data from last event triggered.
+     *
+     * @var array<string, mixed>|null
      */
     protected ?array $payload = null;
 
     /**
      * Send a message to all connections subscribed to the channel.
+     *
+     * @param  array<string, mixed>  $payload
      */
     public function broadcast(array $payload, ?Connection $except = null): void
     {
@@ -23,6 +27,8 @@ class CacheChannel extends Channel
 
     /**
      * Broadcast a message triggered from an internal source.
+     *
+     * @param  array<string, mixed>  $payload
      */
     public function broadcastInternally(array $payload, ?Connection $except = null): void
     {
@@ -39,6 +45,8 @@ class CacheChannel extends Channel
 
     /**
      * Get the cached payload.
+     *
+     * @return array<string, mixed>|null
      */
     public function cachedPayload(): ?array
     {

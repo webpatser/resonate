@@ -13,6 +13,8 @@ class EventDispatcher
 {
     /**
      * Dispatch a message to a channel.
+     *
+     * @param  array<string, mixed>  $payload
      */
     public static function dispatch(Application $app, array $payload, ?Connection $connection = null, ?string $socketId = null): void
     {
@@ -41,6 +43,8 @@ class EventDispatcher
 
     /**
      * Notify all connections subscribed to the given channel.
+     *
+     * @param  array<string, mixed>  $payload
      */
     public static function dispatchSynchronously(Application $app, array $payload, ?Connection $connection = null): void
     {

@@ -46,7 +46,7 @@ class StandardLogger implements Logger
 
         $decoded = Sanitizer::redact($decoded);
 
-        Log::info(json_encode($decoded, JSON_PRETTY_PRINT));
+        Log::info((string) json_encode($decoded, JSON_PRETTY_PRINT));
     }
 
     /**

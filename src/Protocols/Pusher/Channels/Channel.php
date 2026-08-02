@@ -92,6 +92,8 @@ class Channel
 
     /**
      * Send a message to all connections subscribed to the channel.
+     *
+     * @param  array<string, mixed>  $payload
      */
     public function broadcast(array $payload, ?Connection $except = null): void
     {
@@ -101,7 +103,7 @@ class Channel
             return;
         }
 
-        $message = json_encode($payload);
+        $message = (string) json_encode($payload);
 
         Log::info('Broadcasting To', $this->name());
         Log::message($message);
@@ -117,10 +119,12 @@ class Channel
 
     /**
      * Send a broadcast to all connections.
+     *
+     * @param  array<string, mixed>  $payload
      */
     public function broadcastToAll(array $payload): void
     {
-        $message = json_encode($payload);
+        $message = (string) json_encode($payload);
 
         Log::info('Broadcasting To', $this->name());
         Log::message($message);
@@ -150,6 +154,8 @@ class Channel
 
     /**
      * Broadcast a message triggered from an internal source.
+     *
+     * @param  array<string, mixed>  $payload
      */
     public function broadcastInternally(array $payload, ?Connection $except = null): void
     {
@@ -158,6 +164,8 @@ class Channel
 
     /**
      * Get the data associated with the channel.
+     *
+     * @return array<string, mixed>
      */
     public function data(): array
     {

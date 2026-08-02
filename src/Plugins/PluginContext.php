@@ -35,7 +35,7 @@ class PluginContext
      */
     public function sendTo(Connection $connection, string $event, array $data = []): void
     {
-        $connection->send(json_encode([
+        $connection->send((string) json_encode([
             'event' => $event,
             'data' => json_encode($data),
         ]));
@@ -67,6 +67,8 @@ class PluginContext
      *
      * Only reaches connections on the local node; cross-node termination needs
      * a pub/sub terminate envelope (see UsersTerminateController).
+     *
+     * @param  array<string, mixed>  $data
      */
     public function terminate(Connection $connection, ?string $event = null, array $data = []): void
     {

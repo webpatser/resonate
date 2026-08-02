@@ -11,7 +11,7 @@ interface ApplicationProvider
     /**
      * Get all of the configured applications as Application instances.
      *
-     * @return Collection<Application>
+     * @return Collection<array-key, Application>
      */
     public function all(): Collection;
 

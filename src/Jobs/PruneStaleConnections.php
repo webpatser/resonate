@@ -33,7 +33,7 @@ class PruneStaleConnections
                         continue;
                     }
 
-                    $connection->send(json_encode([
+                    $connection->send((string) json_encode([
                         'event' => 'pusher:error',
                         'data' => json_encode([
                             'code' => 4201,

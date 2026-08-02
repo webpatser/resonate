@@ -11,6 +11,8 @@ class ClientEvent
 {
     /**
      * Handle a Pusher client event.
+     *
+     * @param  array<string, mixed>  $event
      */
     public static function handle(Connection $connection, array $event): void
     {
@@ -32,7 +34,7 @@ class ClientEvent
 
         if (! in_array($acceptClientEventsFrom, ['all', 'members'])) {
             // Client events are disabled, so we should reject the event...
-            $connection->send(json_encode([
+            $connection->send((string) json_encode([
                 'event' => 'pusher:error',
                 'data' => json_encode([
                     'code' => 4301,
@@ -48,7 +50,7 @@ class ClientEvent
         // only how the membership claim is sourced, never whether the channel type is checked
         // or whether the sender must be subscribed.
         if (! Str::startsWith($event['channel'], ['private-', 'presence-'])) {
-            $connection->send(json_encode([
+            $connection->send((string) json_encode([
                 'event' => 'pusher:error',
                 'data' => json_encode([
                     'code' => 4009,
@@ -64,7 +66,7 @@ class ClientEvent
         $channelConnection = $channel?->find($connection);
 
         if (! $channelConnection) {
-            $connection->send(json_encode([
+            $connection->send((string) json_encode([
                 'event' => 'pusher:error',
                 'data' => json_encode([
                     'code' => 4009,
@@ -95,6 +97,8 @@ class ClientEvent
 
     /**
      * Whisper a message to all connections on the channel associated with the event.
+     *
+     * @param  array<string, mixed>  $payload
      */
     public static function whisper(Connection $connection, array $payload): void
     {

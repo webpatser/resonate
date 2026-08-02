@@ -14,6 +14,8 @@ interface ChannelConnectionManager
 
     /**
      * Add a connection.
+     *
+     * @param  array<string, mixed>  $data
      */
     public function add(Connection $connection, array $data): void;
 

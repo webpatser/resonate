@@ -3,6 +3,7 @@
 namespace Webpatser\Resonate\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Webpatser\Resonate\Server\Factory;
 
@@ -147,7 +148,11 @@ class ReloadServer extends Command
             ];
         }
 
-        $config = $this->laravel['config']['reverb.servers.reverb'];
+        /** @var ConfigRepository $repository */
+        $repository = $this->laravel->make('config');
+
+        /** @var array<string, mixed> $config */
+        $config = $repository->get('reverb.servers.reverb');
 
         $this->components->warn(
             'No runtime metadata for the running server; falling back to the configured host and port. '.

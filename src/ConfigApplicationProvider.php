@@ -10,6 +10,8 @@ class ConfigApplicationProvider implements ApplicationProvider
 {
     /**
      * Create a new config provider instance.
+     *
+     * @param  Collection<array-key, array<string, mixed>>  $applications
      */
     public function __construct(protected Collection $applications)
     {
@@ -19,7 +21,7 @@ class ConfigApplicationProvider implements ApplicationProvider
     /**
      * Get all of the configured applications as Application instances.
      *
-     * @return Collection<Application>
+     * @return Collection<array-key, Application>
      */
     public function all(): Collection
     {

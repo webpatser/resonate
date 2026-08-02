@@ -16,7 +16,7 @@ class Response
     /**
      * Create a new response adapter instance.
      *
-     * @param  array<string, string|array<int, string>>  $headers
+     * @param  array<non-empty-string, string|array<int, string>>  $headers
      */
     public function __construct(
         protected string $body = '',
@@ -30,12 +30,12 @@ class Response
      * Create a new JSON response.
      *
      * @param  array<string, mixed>|object  $data
-     * @param  array<string, string|array<int, string>>  $headers
+     * @param  array<non-empty-string, string|array<int, string>>  $headers
      */
     public static function json(array|object $data, int $status = HttpStatus::OK, array $headers = []): self
     {
         return new self(
-            json_encode($data),
+            (string) json_encode($data),
             $status,
             array_merge(['content-type' => 'application/json'], $headers),
         );
@@ -44,7 +44,7 @@ class Response
     /**
      * Create a new plain text response.
      *
-     * @param  array<string, string|array<int, string>>  $headers
+     * @param  array<non-empty-string, string|array<int, string>>  $headers
      */
     public static function text(string $body, int $status = HttpStatus::OK, array $headers = []): self
     {
@@ -74,7 +74,7 @@ class Response
     /**
      * Get the response headers.
      *
-     * @return array<string, string|array<int, string>>
+     * @return array<non-empty-string, string|array<int, string>>
      */
     public function getHeaders(): array
     {
@@ -83,6 +83,9 @@ class Response
 
     /**
      * Set a response header.
+     *
+     * @param  non-empty-string  $name
+     * @param  string|array<int, string>  $value
      */
     public function withHeader(string $name, string|array $value): self
     {

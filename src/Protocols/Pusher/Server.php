@@ -199,7 +199,7 @@ class Server
     public function error(Connection $connection, Throwable $exception): void
     {
         if ($exception instanceof PusherException) {
-            $connection->send(json_encode($exception->payload()));
+            $connection->send((string) json_encode($exception->payload()));
 
             Log::error('Message from '.$connection->id().' resulted in a pusher error');
             Log::info($exception->getMessage());
@@ -207,7 +207,7 @@ class Server
             return;
         }
 
-        $connection->send(json_encode([
+        $connection->send((string) json_encode([
             'event' => 'pusher:error',
             'data' => json_encode([
                 'code' => 4200,

@@ -59,7 +59,7 @@ class CliLogger implements Logger
         $decoded = Sanitizer::redact($decoded);
 
         (new Message($this->output))->render(
-            Str::limit(json_encode($decoded, JSON_PRETTY_PRINT), 200)
+            Str::limit((string) json_encode($decoded, JSON_PRETTY_PRINT), 200)
         );
     }
 

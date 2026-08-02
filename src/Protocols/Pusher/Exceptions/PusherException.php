@@ -22,6 +22,8 @@ abstract class PusherException extends Exception
 
     /**
      * Get the Pusher formatted error payload.
+     *
+     * @return array{event: string, data: string|false}
      */
     public function payload(): array
     {
@@ -36,6 +38,8 @@ abstract class PusherException extends Exception
 
     /**
      * Get the encoded Pusher formatted error payload.
+     *
+     * @return string|false
      */
     public function message()
     {

@@ -23,11 +23,15 @@ abstract class Connection
 
     /**
      * Stores the ping state of the connection.
+     *
+     * @var bool
      */
     protected $hasBeenPinged = false;
 
     /**
      * Indicates if the connection uses control frames.
+     *
+     * @var bool
      */
     protected $usesControlFrames = false;
 

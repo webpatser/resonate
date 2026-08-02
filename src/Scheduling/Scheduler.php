@@ -161,6 +161,9 @@ class Scheduler
      * `Throwable` escape, so a failing task can neither cancel its own timer
      * nor surface as a Revolt uncaught error.
      */
+    /**
+     * @return Closure(): void
+     */
     protected function guard(string $name, callable $callback): Closure
     {
         return function () use ($name, $callback): void {

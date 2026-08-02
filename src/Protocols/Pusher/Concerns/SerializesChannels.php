@@ -20,6 +20,8 @@ trait SerializesChannels
 
     /**
      * Restore the channel after serialization.
+     *
+     * @param  array<string, mixed>  $values
      */
     public function __unserialize(array $values): void
     {

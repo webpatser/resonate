@@ -64,6 +64,8 @@ trait InteractsWithPresenceChannels
 
     /**
      * Get the data associated with the channel.
+     *
+     * @return array{presence: array{count: int, ids: array<int, mixed>, hash: array<array-key, mixed>}}
      */
     public function data(): array
     {

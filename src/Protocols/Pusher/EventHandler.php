@@ -26,6 +26,8 @@ class EventHandler
 
     /**
      * Handle an incoming Pusher event.
+     *
+     * @param  array<string, mixed>  $payload
      */
     public function handle(Connection $connection, string $event, array $payload = []): void
     {
@@ -186,7 +188,7 @@ class EventHandler
     {
         if ($channel->hasCachedPayload()) {
             $connection->send(
-                json_encode($channel->cachedPayload())
+                (string) json_encode($channel->cachedPayload())
             );
 
             return;
@@ -217,26 +219,32 @@ class EventHandler
 
     /**
      * Send a response to the given connection.
+     *
+     * @param  array<string, mixed>  $data
      */
     public function send(Connection $connection, string $event, array $data = [], ?string $channel = null): void
     {
         $connection->send(
-            static::formatPayload($event, $data, $channel)
+            (string) static::formatPayload($event, $data, $channel)
         );
     }
 
     /**
      * Send an internal response to the given connection.
+     *
+     * @param  array<string, mixed>  $data
      */
     public function sendInternally(Connection $connection, string $event, array $data = [], ?string $channel = null): void
     {
         $connection->send(
-            static::formatInternalPayload($event, $data, $channel)
+            (string) static::formatInternalPayload($event, $data, $channel)
         );
     }
 
     /**
      * Format the payload for the given event.
+     *
+     * @param  array<string, mixed>  $data
      */
     public function formatPayload(string $event, array $data = [], ?string $channel = null, string $prefix = 'pusher:'): string|false
     {
@@ -251,6 +259,9 @@ class EventHandler
 
     /**
      * Format the internal payload for the given event.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  string|null  $channel
      */
     public function formatInternalPayload(string $event, array $data = [], $channel = null): string|false
     {

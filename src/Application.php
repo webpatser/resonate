@@ -8,6 +8,10 @@ class Application
 {
     /**
      * Create a new application instance.
+     *
+     * @param  array<int, string>  $allowedOrigins
+     * @param  array<string, mixed>|null  $rateLimiting
+     * @param  array<string, mixed>  $options
      */
     public function __construct(
         protected string $id,
@@ -139,6 +143,8 @@ class Application
 
     /**
      * Get the rate limiting configuration for the application.
+     *
+     * @return array<string, mixed>|null
      */
     public function rateLimiting(): ?array
     {
@@ -155,6 +161,8 @@ class Application
 
     /**
      * Get the application options.
+     *
+     * @return array<string, mixed>
      */
     public function options(): ?array
     {

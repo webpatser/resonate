@@ -65,6 +65,8 @@ class RedisPubSubProvider implements PubSubProvider
 
     /**
      * The fiber pumping incoming messages to the handler.
+     *
+     * @var Future<void>|null
      */
     protected ?Future $listener = null;
 

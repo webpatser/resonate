@@ -21,7 +21,7 @@ class Message extends Component
      * Compile the given view contents.
      *
      * @param  string  $view
-     * @param  array  $data
+     * @param  array<string, mixed>  $data
      * @return string
      */
     protected function compile($view, $data)
@@ -32,7 +32,7 @@ class Message extends Component
 
         include __DIR__."/views/$view.php";
 
-        return tap(ob_get_contents(), function () {
+        return tap((string) ob_get_contents(), function () {
             ob_end_clean();
         });
     }

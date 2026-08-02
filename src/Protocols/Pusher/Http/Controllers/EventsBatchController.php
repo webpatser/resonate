@@ -29,7 +29,10 @@ class EventsBatchController extends Controller
         $application = $request->application();
         $channels = $request->channels();
 
-        $items = collect($payload['batch'])->map(function ($item) use ($application, $channels) {
+        /** @var array<int, array<string, mixed>> $batch */
+        $batch = $payload['batch'];
+
+        $items = collect($batch)->map(function ($item) use ($application, $channels) {
             EventDispatcher::dispatch(
                 $application,
                 [
