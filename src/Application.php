@@ -2,6 +2,8 @@
 
 namespace Webpatser\Resonate;
 
+use Webpatser\Resonate\Exceptions\InvalidConfiguration;
+
 class Application
 {
     /**
@@ -20,7 +22,37 @@ class Application
         protected ?array $rateLimiting = null,
         protected array $options = [],
     ) {
-        //
+        static::ensureRateLimitingIsValid($this->rateLimiting, $this->id);
+    }
+
+    /**
+     * Validate an application's rate limiting block.
+     *
+     * Enabled rate limiting with a missing `max_attempts` handed `null` to the
+     * limiter, which then rejected every connection after its second message:
+     * a typo in the config bricked the application with no error anywhere. The
+     * same check runs at server boot against the raw config, so the failure
+     * lands on the console rather than on a client.
+     *
+     * @param  array<string, mixed>|null  $rateLimiting
+     *
+     * @throws InvalidConfiguration
+     */
+    public static function ensureRateLimitingIsValid(?array $rateLimiting, string $application): void
+    {
+        if (($rateLimiting['enabled'] ?? false) !== true) {
+            return;
+        }
+
+        foreach (['max_attempts', 'decay_seconds'] as $key) {
+            $value = $rateLimiting[$key] ?? null;
+
+            if (! is_numeric($value) || (int) $value < 1) {
+                throw new InvalidConfiguration(
+                    "Rate limiting is enabled for application [{$application}] but [{$key}] is not a positive integer."
+                );
+            }
+        }
     }
 
     /**

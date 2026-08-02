@@ -45,6 +45,18 @@ return [
             ],
             'max_request_size' => env('REVERB_MAX_REQUEST_SIZE', 10_000),
             'auth_timestamp_grace' => env('REVERB_AUTH_TIMESTAMP_GRACE', 600),
+
+            /*
+            | Resource limits on what a single connection may ask the server to
+            | allocate. `max_channel_name_length` bounds the name a client can
+            | subscribe to (Pusher itself caps names at 164 characters, so the
+            | default leaves room and still bounds the allocation), and
+            | `max_subscriptions_per_connection` bounds how many distinct
+            | channels one connection may hold at once. Set either to 0 to
+            | disable the check.
+            */
+            'max_channel_name_length' => env('REVERB_MAX_CHANNEL_NAME_LENGTH', 255),
+            'max_subscriptions_per_connection' => env('REVERB_MAX_SUBSCRIPTIONS_PER_CONNECTION', 250),
             'drain_timeout' => env('REVERB_DRAIN_TIMEOUT', 30),
             'scaling' => [
                 'enabled' => env('REVERB_SCALING_ENABLED', false),

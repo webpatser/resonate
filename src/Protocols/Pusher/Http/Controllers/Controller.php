@@ -25,8 +25,11 @@ use Webpatser\Resonate\Server\Router;
  * it wraps the fledge request, reads the matched route parameters, runs the
  * (verbatim-ported) signature verification, then delegates to the concrete
  * controller's `handle()`. The HMAC canonicalization in `verifySignature()`
- * is byte-for-byte the same as Reverb's so the host app's stock `pusher`
- * broadcaster signs requests Resonate accepts unchanged.
+ * is byte-for-byte the same as Reverb's (and as `pusher/pusher-php-server`'s
+ * own signer) so the host app's stock `pusher` broadcaster signs requests
+ * Resonate accepts unchanged. Inputs that canonicalization cannot represent
+ * unambiguously are rejected rather than re-encoded: see
+ * {@see ensureQueryParametersAreUnambiguous()}.
  */
 abstract class Controller implements RequestHandler
 {
@@ -115,12 +118,12 @@ abstract class Controller implements RequestHandler
         $body = $request->getBody();
 
         $params = Arr::except($query, [
-            'auth_signature', 'body_md5', 'appId', 'appKey', 'channelName',
+            'auth_signature', 'body_md5', 'body_sha256', 'appId', 'appKey', 'channelName',
         ]);
 
-        if ($body !== '') {
-            $params['body_md5'] = md5($body);
-        }
+        $this->ensureQueryParametersAreUnambiguous($params);
+
+        $params = array_merge($params, $this->bodyDigestsForVerification($query, $body));
 
         ksort($params);
 
@@ -178,18 +181,98 @@ abstract class Controller implements RequestHandler
     }
 
     /**
-     * Format the given parameters into the correct format for signature verification.
+     * Reject query parameters the canonical signing string cannot represent unambiguously.
+     *
+     * The canonical string is `key=value` pairs joined with `&`, with no
+     * escaping whatsoever. That is not our choice: it is what
+     * `pusher/pusher-php-server` signs (`Pusher::array_implode('=', '&', ...)`),
+     * so re-encoding here would reject every request the stock Laravel `pusher`
+     * broadcaster sends. The ambiguity is real though: a `&` or `=` inside a
+     * value is indistinguishable from a separator, so a caller who influences
+     * one signed value can smuggle in or delete other signed parameters and
+     * still land on the same signed string. Arrays are worse: `a[]=x&a[]=y`
+     * canonicalized identically to `a=x,y`, and a nested array stringified to
+     * the literal `Array`, leaving the nested values effectively unsigned.
+     *
+     * Rejecting the ambiguous input rather than changing the canonical form
+     * keeps ordinary scalar queries byte-identical on the wire. Nothing that
+     * previously worked is lost: the SDK only ever signs scalars, and where it
+     * does accept an array parameter it signs `info=a,b` while Guzzle sends
+     * `info[0]=a&info[1]=b`, which never verified in the first place.
      *
      * @param  array<string, mixed>  $params
+     *
+     * @throws HttpException
+     */
+    protected function ensureQueryParametersAreUnambiguous(array $params): void
+    {
+        foreach ($params as $key => $value) {
+            if (! is_scalar($value)) {
+                throw new HttpException(400, 'Signed query parameters must be scalar values.');
+            }
+
+            if ($this->isAmbiguousInSignature((string) $key) || $this->isAmbiguousInSignature((string) $value)) {
+                throw new HttpException(400, 'Signed query parameters must not contain signature separators.');
+            }
+        }
+    }
+
+    /**
+     * Determine whether the given string contains a canonical-string separator.
+     */
+    protected function isAmbiguousInSignature(string $value): bool
+    {
+        // `&` and `=` separate the pairs; `\n` separates method, path and query.
+        return strpbrk($value, "&=\n\r") !== false;
+    }
+
+    /**
+     * Get the body digests to bind into the signature.
+     *
+     * The body is bound to the signature by digest, and the digest the caller
+     * signed is recomputed here from the body actually received, so a swapped
+     * body fails verification. `body_md5` is a Pusher wire-protocol field and
+     * every stock client sends it, so it has to keep working; MD5 chosen-prefix
+     * collisions are practical though, so a client that also (or only) signs
+     * `body_sha256` gets that bound instead. When both are supplied both are
+     * bound, which means the stronger digest has to hold too.
+     *
+     * @param  array<string, mixed>  $query
+     * @return array<string, string>
+     */
+    protected function bodyDigestsForVerification(array $query, string $body): array
+    {
+        $digests = [];
+
+        if (array_key_exists('body_sha256', $query)) {
+            $digests['body_sha256'] = hash('sha256', $body);
+        }
+
+        if (array_key_exists('body_md5', $query)) {
+            $digests['body_md5'] = md5($body);
+        }
+
+        // Stock Pusher clients always send `body_md5` alongside a body, but a
+        // request that carries a body and no digest at all must still bind it.
+        if ($digests === [] && $body !== '') {
+            $digests['body_md5'] = md5($body);
+        }
+
+        return $digests;
+    }
+
+    /**
+     * Format the given parameters into the correct format for signature verification.
+     *
+     * Every value is a scalar by the time this runs: anything else was already
+     * rejected by {@see ensureQueryParametersAreUnambiguous()}.
+     *
+     * @param  array<string, scalar>  $params
      */
     protected static function formatQueryParametersForVerification(array $params): string
     {
-        return collect($params)->map(function ($value, $key) {
-            if (is_array($value)) {
-                $value = implode(',', $value);
-            }
-
-            return "{$key}={$value}";
-        })->implode('&');
+        return collect($params)
+            ->map(fn ($value, $key) => "{$key}={$value}")
+            ->implode('&');
     }
 }

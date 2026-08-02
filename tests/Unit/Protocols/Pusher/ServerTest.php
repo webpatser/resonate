@@ -233,7 +233,7 @@ it('sends an error if something fails for data channel type', function () {
     ]);
 });
 
-it('does not log a rate-limited message body', function () {
+it('does not log a rate-limited message', function () {
     $this->app['config']->set('reverb.apps.apps.0.rate_limiting', [
         'enabled' => true,
         'max_attempts' => 1,
@@ -248,7 +248,12 @@ it('does not log a rate-limited message body', function () {
     {
         public array $bodies = [];
 
-        public function info(string $title, ?string $message = null): void {}
+        public array $titles = [];
+
+        public function info(string $title, ?string $message = null): void
+        {
+            $this->titles[] = $title;
+        }
 
         public function error(string $message): void {}
 
@@ -282,7 +287,12 @@ it('does not log a rate-limited message body', function () {
 
         // The accepted message body is logged; the rate-limited one is not.
         expect($recorder->bodies)->toContain($accepted)
-            ->and($recorder->bodies)->not->toContain($rejected);
+            ->and($recorder->bodies)->not->toContain($rejected)
+            // Nor does a throttled message reach the logger at all: the
+            // "Message Received" line used to be written before the check, so
+            // a throttled flood still cost a log write per message.
+            ->and(collect($recorder->titles)->filter(fn ($title) => $title === 'Message Received'))
+            ->toHaveCount(1);
     } finally {
         $proxy->setStaticPropertyValue('logger', $previous);
     }
@@ -364,6 +374,9 @@ it('allows a message at the max_message_size limit', function () {
 
 it('treats max_message_size <= 0 as unlimited', function () {
     $this->app['config']->set('reverb.apps.apps.0.max_message_size', 0);
+    // The channel name cap is a separate limit with its own test; disable it
+    // here so this case still exercises an unbounded message size.
+    $this->app['config']->set('reverb.servers.reverb.max_channel_name_length', 0);
     $this->server->open($connection = new FakeConnection);
 
     $payload = json_encode([

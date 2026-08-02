@@ -70,6 +70,22 @@ class WebSocketConnection extends ConnectionContract
     }
 
     /**
+     * Get the remote address of the connected client.
+     *
+     * Guarded the same way as `control()`: the narrow
+     * {@see \Webpatser\Resonate\Contracts\WebSocketConnection} contract has no
+     * address accessor, so a transport that cannot report one keeps working.
+     */
+    public function remoteAddress(): ?string
+    {
+        if (! method_exists($this->connection, 'remoteAddress')) {
+            return null;
+        }
+
+        return $this->connection->remoteAddress();
+    }
+
+    /**
      * Terminate the connection.
      */
     public function terminate(): void

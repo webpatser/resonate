@@ -74,6 +74,50 @@ function signedRequest(string $method, string $path, array $query = [], string $
     return $request;
 }
 
+/**
+ * Sign the given parameters the way Pusher signs them and return the query string.
+ *
+ * Unlike signedRequest() the caller owns the whole parameter set, including any
+ * body digest, so a request can bind its body with md5, sha256 or both.
+ *
+ * @param  array<string, string>  $params
+ */
+function signedQuery(string $method, string $path, array $params): string
+{
+    ksort($params);
+
+    $pairs = [];
+    foreach ($params as $key => $value) {
+        $pairs[] = "{$key}={$value}";
+    }
+
+    $params['auth_signature'] = hash_hmac(
+        'sha256',
+        implode("\n", [$method, $path, implode('&', $pairs)]),
+        'app-secret',
+    );
+
+    return http_build_query($params);
+}
+
+/**
+ * Run a raw query string through the controller and return the response status.
+ */
+function statusFor(string $method, string $path, string $query, string $body = ''): int
+{
+    $request = new FledgeRequest(
+        Mockery::mock(Client::class),
+        $method,
+        Http::new('http://localhost'.$path.'?'.$query),
+        [],
+        $body,
+    );
+
+    $request->setAttribute(Router::class, ['appId' => 'app-id']);
+
+    return testController()->handleRequest($request)->getStatus();
+}
+
 it('passes a request with a valid signature through to handle()', function () {
     $controller = testController();
 
@@ -310,8 +354,19 @@ it('rejects body tampering after signing', function () {
     expect($response->getStatus())->toBe(401);
 });
 
-it('canonicalizes array query parameters as comma-joined values', function () {
-    // Compute signature with the canonical form `foo=a,b` as the controller does.
+/*
+ * Canonicalization ambiguity.
+ *
+ * The canonical string is unescaped `key=value` pairs joined with `&`, which
+ * is what pusher/pusher-php-server signs, so the form cannot change without
+ * breaking every stock client. What can change is which inputs are accepted:
+ * anything the form cannot represent unambiguously is now rejected with 400
+ * before the HMAC is computed.
+ */
+
+it('rejects an array query parameter that canonicalized like a comma-joined scalar', function () {
+    // `foo=a,b` and `foo[]=a&foo[]=b` produced the same signed string, so one
+    // signature verified two different query strings.
     $params = [
         'auth_key' => 'app-key',
         'auth_timestamp' => (string) time(),
@@ -332,21 +387,134 @@ it('canonicalizes array query parameters as comma-joined values', function () {
         'app-secret',
     );
 
-    // Now construct the actual request with PHP-array-style query.
-    $query = 'auth_key=app-key'
+    // The scalar form still verifies.
+    $scalar = 'auth_key=app-key'
+        .'&auth_timestamp='.$params['auth_timestamp']
+        .'&auth_version=1.0'
+        .'&foo=a%2Cb'
+        .'&auth_signature='.$signature;
+
+    // The array form, which used to share that signature, no longer does.
+    $array = 'auth_key=app-key'
         .'&auth_timestamp='.$params['auth_timestamp']
         .'&auth_version=1.0'
         .'&foo[]=a&foo[]=b'
         .'&auth_signature='.$signature;
 
-    $request = new FledgeRequest(
-        Mockery::mock(Client::class),
-        'GET',
-        Http::new('http://localhost/apps/app-id/channels?'.$query),
+    expect(statusFor('GET', '/apps/app-id/channels', $scalar))->toBe(200)
+        ->and(statusFor('GET', '/apps/app-id/channels', $array))->toBe(400);
+});
+
+it('rejects a nested array query parameter', function () {
+    // A nested array stringified to the literal "Array", so every nested value
+    // was outside the signature entirely.
+    $query = 'auth_key=app-key'
+        .'&auth_timestamp='.time()
+        .'&auth_version=1.0'
+        .'&foo[bar][baz]=qux'
+        .'&auth_signature=deadbeef';
+
+    expect(statusFor('GET', '/apps/app-id/channels', $query))->toBe(400);
+});
+
+it('rejects a signed value containing a separator', function () {
+    // A caller who influences one signed value could otherwise smuggle another
+    // signed parameter into the same canonical string.
+    $params = [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => (string) time(),
+        'auth_version' => '1.0',
+        'filter_by_prefix' => 'private-&info=all',
+    ];
+
+    ksort($params);
+
+    $pairs = [];
+    foreach ($params as $key => $value) {
+        $pairs[] = "{$key}={$value}";
+    }
+
+    $signature = hash_hmac(
+        'sha256',
+        implode("\n", ['GET', '/apps/app-id/channels', implode('&', $pairs)]),
+        'app-secret',
     );
-    $request->setAttribute(Router::class, ['appId' => 'app-id']);
 
-    $response = testController()->handleRequest($request);
+    $query = http_build_query($params + ['auth_signature' => $signature]);
 
-    expect($response->getStatus())->toBe(200);
+    expect(statusFor('GET', '/apps/app-id/channels', $query))->toBe(400);
+});
+
+it('rejects a signed key containing a separator', function () {
+    $timestamp = (string) time();
+
+    // `a=1&b` as a key: PHP parses `a%3D1%26b=x` into exactly that.
+    $query = 'auth_key=app-key'
+        .'&auth_timestamp='.$timestamp
+        .'&auth_version=1.0'
+        .'&a%3D1%26b=x'
+        .'&auth_signature=deadbeef';
+
+    expect(statusFor('GET', '/apps/app-id/channels', $query))->toBe(400);
+});
+
+/*
+ * Body binding.
+ */
+
+it('verifies a body bound with sha256', function () {
+    $body = '{"name":"OrderShipped"}';
+
+    $params = [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => (string) time(),
+        'auth_version' => '1.0',
+        'body_sha256' => hash('sha256', $body),
+    ];
+
+    expect(statusFor('POST', '/apps/app-id/events', signedQuery('POST', '/apps/app-id/events', $params), $body))->toBe(200);
+});
+
+it('verifies a body bound with both sha256 and md5', function () {
+    $body = '{"name":"OrderShipped"}';
+
+    $params = [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => (string) time(),
+        'auth_version' => '1.0',
+        'body_md5' => md5($body),
+        'body_sha256' => hash('sha256', $body),
+    ];
+
+    expect(statusFor('POST', '/apps/app-id/events', signedQuery('POST', '/apps/app-id/events', $params), $body))->toBe(200);
+});
+
+it('rejects a tampered body when it was bound with sha256', function () {
+    $body = '{"foo":"a"}';
+
+    $params = [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => (string) time(),
+        'auth_version' => '1.0',
+        'body_sha256' => hash('sha256', $body),
+    ];
+
+    $query = signedQuery('POST', '/apps/app-id/events', $params);
+
+    expect(statusFor('POST', '/apps/app-id/events', $query, '{"foo":"b"}'))->toBe(401);
+});
+
+it('rejects a body_sha256 that does not match the body it signed', function () {
+    // The caller signed a digest of a different body: the digest is recomputed
+    // from what actually arrived, so the signature cannot match.
+    $params = [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => (string) time(),
+        'auth_version' => '1.0',
+        'body_sha256' => hash('sha256', '{"foo":"a"}'),
+    ];
+
+    $query = signedQuery('POST', '/apps/app-id/events', $params);
+
+    expect(statusFor('POST', '/apps/app-id/events', $query, '{"foo":"b"}'))->toBe(401);
 });

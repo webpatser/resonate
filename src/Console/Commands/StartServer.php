@@ -10,8 +10,10 @@ use Laravel\Telescope\Telescope;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\SignalableCommandInterface;
+use Webpatser\Resonate\Application as ResonateApplication;
 use Webpatser\Resonate\Contracts\Logger;
 use Webpatser\Resonate\Contracts\ServerProvider;
+use Webpatser\Resonate\Exceptions\InvalidConfiguration;
 use Webpatser\Resonate\Jobs\PingInactiveConnections;
 use Webpatser\Resonate\Jobs\PruneStaleConnections;
 use Webpatser\Resonate\Loggers\CliLogger;
@@ -69,6 +71,12 @@ class StartServer extends Command implements SignalableCommandInterface
             return self::FAILURE;
         }
 
+        if (($invalid = $this->applicationConfigurationError()) !== null) {
+            $this->components->error($invalid);
+
+            return self::FAILURE;
+        }
+
         if ($this->option('debug')) {
             $this->laravel->instance(Logger::class, new CliLogger($this->output));
         }
@@ -118,6 +126,29 @@ class StartServer extends Command implements SignalableCommandInterface
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Get the first configured application error, if any.
+     *
+     * Validated against the raw config rather than through the application
+     * provider, so a server can still start while an unrelated application
+     * entry is incomplete.
+     */
+    protected function applicationConfigurationError(): ?string
+    {
+        foreach ($this->laravel['config']['reverb.apps.apps'] ?? [] as $index => $app) {
+            try {
+                ResonateApplication::ensureRateLimitingIsValid(
+                    $app['rate_limiting'] ?? null,
+                    (string) ($app['app_id'] ?? $index),
+                );
+            } catch (InvalidConfiguration $e) {
+                return $e->getMessage();
+            }
+        }
+
+        return null;
     }
 
     /**

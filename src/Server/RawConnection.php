@@ -2,6 +2,7 @@
 
 namespace Webpatser\Resonate\Server;
 
+use Fledge\Async\Stream\InternetAddress;
 use Fledge\Async\WebSocket\WebsocketClient;
 use Fledge\Async\WebSocket\WebsocketCloseCode;
 use Webpatser\Resonate\Contracts\WebSocketConnection;
@@ -38,6 +39,22 @@ class RawConnection implements WebSocketConnection
     public function id(): int|string
     {
         return $this->client->getId();
+    }
+
+    /**
+     * Get the remote address of the connected client.
+     *
+     * Internet peers report the bare IP without the port, so every connection
+     * from one client keys to the same value. Unix socket peers have no IP, so
+     * they fall back to the address string.
+     */
+    public function remoteAddress(): ?string
+    {
+        $address = $this->client->getRemoteAddress();
+
+        return $address instanceof InternetAddress
+            ? $address->getAddress()
+            : $address->toString();
     }
 
     /**

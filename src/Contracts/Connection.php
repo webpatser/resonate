@@ -93,6 +93,20 @@ abstract class Connection
     }
 
     /**
+     * Get the remote address of the connected client, when the transport exposes one.
+     *
+     * This is the TCP peer address. Resonate does not read `X-Forwarded-For` or
+     * `Forwarded`, so behind a reverse proxy or load balancer every connection
+     * reports the proxy's address. Anything keyed on this (message rate
+     * limiting) then applies to the proxy as a whole, which is why the
+     * connection dimension is kept alongside it.
+     */
+    public function remoteAddress(): ?string
+    {
+        return null;
+    }
+
+    /**
      * Mark the connection as pinged.
      */
     public function ping(): void

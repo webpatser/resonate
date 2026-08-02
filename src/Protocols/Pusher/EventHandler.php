@@ -10,6 +10,7 @@ use Webpatser\Resonate\Plugins\PluginManager;
 use Webpatser\Resonate\Protocols\Pusher\Channels\CacheChannel;
 use Webpatser\Resonate\Protocols\Pusher\Channels\Channel;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
+use Webpatser\Resonate\Protocols\Pusher\Exceptions\SubscriptionLimitExceeded;
 
 class EventHandler
 {
@@ -58,6 +59,13 @@ class EventHandler
 
     /**
      * Subscribe to the given channel.
+     *
+     * Both limits are checked before the channel is looked up, because
+     * `findOrCreate()` allocates a Channel for any name it is handed: an
+     * unchecked subscribe was an allocation primitive, and the eventual
+     * disconnect then walked every channel it had created.
+     *
+     * @throws SubscriptionLimitExceeded
      */
     public function subscribe(Connection $connection, string $channel, ?string $auth = null, ?string $data = null): void
     {
@@ -66,10 +74,12 @@ class EventHandler
             'auth' => $auth,
             'channel_data' => $data,
         ], [
-            'channel' => ['nullable', 'string'],
+            'channel' => $this->channelNameRules(),
             'auth' => ['nullable', 'string'],
             'channel_data' => ['nullable', 'json'],
         ])->validate();
+
+        $this->ensureWithinSubscriptionLimit($connection, $channel);
 
         $channel = $this->channels
             ->for($connection->app())
@@ -78,6 +88,62 @@ class EventHandler
         $channel->subscribe($connection, $auth, $data);
 
         $this->afterSubscribe($channel, $connection);
+    }
+
+    /**
+     * Get the validation rules for a subscribed channel name.
+     *
+     * A configured length of 0 disables the check.
+     *
+     * @return array<int, string>
+     */
+    protected function channelNameRules(): array
+    {
+        $rules = ['nullable', 'string'];
+
+        $length = (int) config('reverb.servers.reverb.max_channel_name_length', 255);
+
+        if ($length > 0) {
+            $rules[] = 'max:'.$length;
+        }
+
+        return $rules;
+    }
+
+    /**
+     * Ensure the connection is within its subscription cap.
+     *
+     * Re-subscribing to a channel the connection is already in is idempotent
+     * and never counts against the cap, so a client at the limit can still
+     * refresh an existing subscription.
+     *
+     * @throws SubscriptionLimitExceeded
+     */
+    protected function ensureWithinSubscriptionLimit(Connection $connection, string $channel): void
+    {
+        $limit = (int) config('reverb.servers.reverb.max_subscriptions_per_connection', 250);
+
+        if ($limit <= 0) {
+            return;
+        }
+
+        $channels = $this->channels->for($connection->app());
+
+        if ($channels->find($channel)?->findById($connection->id()) !== null) {
+            return;
+        }
+
+        $subscriptions = 0;
+
+        foreach ($channels->all() as $existing) {
+            if ($existing->findById($connection->id()) === null) {
+                continue;
+            }
+
+            if (++$subscriptions >= $limit) {
+                throw new SubscriptionLimitExceeded;
+            }
+        }
     }
 
     /**

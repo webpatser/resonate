@@ -136,6 +136,77 @@ it('rejects a literal Origin: null string', function () {
     assertOriginRejected($connection);
 });
 
+/*
+ * Scheme and port matching.
+ *
+ * A bare host entry keeps its documented behaviour (host only, any scheme, any
+ * port), which is what every test above pins. An entry that carries a scheme
+ * means the full origin, so it can no longer be satisfied by a plaintext or
+ * alternate-port origin on the same host.
+ */
+
+it('rejects an http origin when the allow-list entry is https', function () {
+    $this->app['config']->set('reverb.apps.apps.0.allowed_origins', ['https://example.com']);
+
+    $this->server->open($connection = new FakeConnection(origin: 'http://example.com'));
+
+    assertOriginRejected($connection);
+});
+
+it('allows an https origin when the allow-list entry is https', function () {
+    $this->app['config']->set('reverb.apps.apps.0.allowed_origins', ['https://example.com']);
+
+    $this->server->open($connection = new FakeConnection(origin: 'https://example.com'));
+
+    assertOriginAllowed($connection);
+});
+
+it('rejects an alternate port when the allow-list entry has no port', function () {
+    $this->app['config']->set('reverb.apps.apps.0.allowed_origins', ['https://example.com']);
+
+    $this->server->open($connection = new FakeConnection(origin: 'https://example.com:8443'));
+
+    assertOriginRejected($connection);
+});
+
+it('allows the port named by the allow-list entry', function () {
+    $this->app['config']->set('reverb.apps.apps.0.allowed_origins', ['https://example.com:8443']);
+
+    $this->server->open($connection = new FakeConnection(origin: 'https://example.com:8443'));
+
+    assertOriginAllowed($connection);
+});
+
+it('treats an explicit default port as the default', function () {
+    $this->app['config']->set('reverb.apps.apps.0.allowed_origins', ['https://example.com:443']);
+
+    $this->server->open($connection = new FakeConnection(origin: 'https://example.com'));
+
+    assertOriginAllowed($connection);
+});
+
+it('matches subdomains with a scheme-carrying wildcard pattern', function () {
+    $this->app['config']->set('reverb.apps.apps.0.allowed_origins', ['https://*.example.com']);
+
+    $this->server->open($connection = new FakeConnection(origin: 'https://sub.example.com'));
+
+    assertOriginAllowed($connection);
+
+    $this->server->open($plaintext = new FakeConnection(origin: 'http://sub.example.com'));
+
+    assertOriginRejected($plaintext);
+});
+
+it('does not disable origin verification for a non-string truthy allow-list entry', function () {
+    // `[env('REVERB_ALLOWED_ORIGINS', true)]` yields [true], and a loose
+    // in_array('*', [true]) is true, which turned the allow-list off entirely.
+    $this->app['config']->set('reverb.apps.apps.0.allowed_origins', [true]);
+
+    $this->server->open($connection = new FakeConnection(origin: 'https://example.com'));
+
+    assertOriginRejected($connection);
+});
+
 it('accepts a punycode origin against the punycode pattern', function () {
     // Resonate does not perform IDN normalization (per SECURITY.md). Operators
     // must configure the punycode form if their domain has non-ASCII characters.

@@ -37,15 +37,29 @@ class FakeConnection extends BaseConnection
     public $id;
 
     /**
+     * The remote address reported for the connection.
+     */
+    public ?string $remoteAddress = null;
+
+    /**
      * Create a new fake connection instance.
      */
-    public function __construct(?string $identifier = null, ?string $origin = null)
+    public function __construct(?string $identifier = null, ?string $origin = null, ?string $remoteAddress = null)
     {
         if ($identifier) {
             $this->identifier = $identifier;
         }
 
         $this->origin = $origin ?? 'http://localhost';
+        $this->remoteAddress = $remoteAddress;
+    }
+
+    /**
+     * Get the remote address of the connected client.
+     */
+    public function remoteAddress(): ?string
+    {
+        return $this->remoteAddress;
     }
 
     /**

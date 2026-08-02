@@ -4,7 +4,31 @@ All notable changes to `webpatser/resonate` are documented here.
 
 ## Unreleased
 
-Correctness release from a full audit of the server and its plugin family. Three of these break or defeat something in every deployment; the CI changes exist so they cannot come back silently.
+Correctness release from a full audit of the server and its plugin family. Three of these break or defeat something in every deployment; the CI changes exist so they cannot come back silently. A second pass over the signature and limit paths follows in Security below; two of those change what the server accepts, so read the wire-compatibility notes before upgrading.
+
+### Security
+
+- **The signed canonical string had no escaping or type tagging.** `Controller::formatQueryParametersForVerification()` joined query pairs with a raw `&` and `=` and flattened arrays with `implode(',')`, so `a[]=x&a[]=y` canonicalized identically to `a=x,y`, a nested array stringified to the literal `Array` (leaving its values entirely unsigned, plus a PHP notice), and a `&` or `=` inside a value was indistinguishable from a separator. Two different query strings could therefore share one signed string, which let a caller who influences any signed value smuggle in or delete other signed parameters.
+
+  The canonical form itself is not ours to change: `pusher/pusher-php-server` signs exactly this string (`Pusher::array_implode('=', '&', $params)` after `ksort`), so percent-encoding here would reject every request the stock Laravel `pusher` broadcaster sends. The fix rejects the input the form cannot represent instead. A signed query parameter that is not a scalar, or whose key or value contains `&`, `=`, `\n` or `\r`, is rejected with `400` before the HMAC is computed. Ordinary scalar queries are byte-identical on the wire and keep verifying unchanged.
+
+  Wire compatibility: nothing the SDK produces is affected. It only ever signs scalars, and in the one place it accepts an array parameter it signs `info=a,b` while Guzzle sends `info[0]=a&info[1]=b`, which never verified in the first place. Operators who hand-roll a signer and pass array query parameters, or who put a literal `&` or `=` inside a signed value (a `filter_by_prefix` containing `=`, say, which Pusher channel names do permit), will now get a `400` and need to drop the ambiguous parameter.
+- **Request bodies were bound to the signature by MD5 alone.** `body_md5` is the only body binding the Pusher protocol defines, and chosen-prefix collisions against MD5 are practical. The field stays accepted, because every stock client sends it and dropping it would break all of them; a client that also (or instead) signs `body_sha256` now binds its body with SHA-256, and when both are present both are bound, so the stronger digest has to hold too. Whichever digest a request carries is recomputed from the body actually received, so a swapped body still fails verification.
+
+  Wire compatibility: additive. No client is required to change, and `body_sha256` is understood by no other Pusher server, so a client that adopts it is tied to Resonate.
+- **The origin allow-list compared only the host.** `parse_url(..., PHP_URL_HOST)` discarded the scheme and port, so an entry meaning "our HTTPS origin" also admitted `http://` and alternate-port origins on the same host. An allow-list entry that carries a scheme (`https://example.com`) is now matched against the full scheme, host and port, with default ports normalized away on both sides. Bare entries (`example.com`, `*.example.com`) are the documented configuration format and are unchanged: they still match on host alone, whatever scheme or port the client used.
+
+  Separately, `in_array('*', $allowedOrigins)` was not strict, so an allow-list built from a config expression that yields `true` (`[env('REVERB_ALLOWED_ORIGINS', true)]`) matched `'*' == true` and silently disabled origin verification altogether. The check is strict now.
+- **The message rate limiter reset on reconnect and never released its keys.** The key was `'reverb:message:'.$connection->id()`, and the socket id is fresh random per connection, so a client that tripped the limit reset its quota simply by reconnecting, which `terminate_on_limit` actively invites. Nothing cleared the key on disconnect either, and the array cache store only evicts an expired entry when that same key is read again, so two entries per connection accumulated for the lifetime of the process. And `max_attempts` was read with no fallback, so a config missing that key handed `null` to `tooManyAttempts()`, which rejected every message after the second one with nothing anywhere to explain it.
+
+  Two dimensions are counted now, each with the configured quota: the client (`{app_id}:client:{remote_address}`), which survives a reconnect and is deliberately not released on close, and the connection (`{app_id}:connection:{socket_id}`), which is released in `Server::close()`. Expired keys are swept at most once a second, so the store no longer holds entries for addresses that never come back. `max_attempts` and `decay_seconds` are validated when the `Application` is built and again at server boot from the raw config, so `resonate:start` fails with the offending key named rather than starting a bricked application.
+
+  Caveat: the remote address is the TCP peer. Resonate does not read `X-Forwarded-For`, so behind a reverse proxy every connection reports the proxy's address and the client dimension applies to the proxy as a whole. When the transport reports no address at all, only the connection dimension exists and a reconnect does start over.
+
+  Inbound `Log::info('Message Received')` moved below the rate-limit check as well, so a throttled flood no longer costs a log write per message. Frame body logging was already below it.
+- **A connection could subscribe to unbounded channels with unbounded names.** The channel name was validated as `nullable|string` with no length bound, and `findOrCreate()` allocates a Channel for any name it is handed, so one connection was an allocation primitive; its eventual disconnect then walked every channel it had created in `unsubscribeFromAll()`. Two configurable limits now run before the lookup: `servers.reverb.max_channel_name_length` (default `255`, rejected with pusher code `4200`) and `servers.reverb.max_subscriptions_per_connection` (default `250`, rejected with pusher code `4302`, in the "rejected, do not retry" range, leaving the connection and its existing subscriptions intact). Re-subscribing to a channel the connection already holds is idempotent and never counts against the cap. Set either to `0` to disable.
+
+  Wire compatibility: applications that legitimately hold more than 250 channels on one connection, or use channel names longer than 255 characters, must raise the new settings. Pusher itself caps channel names at 164 characters, so the default leaves room.
 
 ### Fixed
 
@@ -25,6 +49,8 @@ Correctness release from a full audit of the server and its plugin family. Three
 
 ### Changed
 
+- New configuration keys under `servers.reverb`: `max_channel_name_length` (`REVERB_MAX_CHANNEL_NAME_LENGTH`, default `255`) and `max_subscriptions_per_connection` (`REVERB_MAX_SUBSCRIPTIONS_PER_CONNECTION`, default `250`). Published `config/reverb.php` files without them get the defaults; both are documented in SECURITY.md.
+- `Connection::remoteAddress()` reports the TCP peer address when the transport exposes one, and returns `null` otherwise. `RawConnection` reads it from the fledge-fiber websocket client (the bare IP for internet peers, the address string for unix sockets). Custom `Connection` implementations inherit the `null` default and keep working.
 - CI runs Pint and PHPStan (level 5, no baseline and no ignores) and starts a Redis service so the previously self-skipping scaling integration tests actually run.
 - `ChannelConnection` documents the methods it proxies to the underlying connection with `@method` tags, and several docblocks were corrected to match reality, including the `$applications` shape in `ArrayChannelManager`, which claimed one array level more than the code uses.
 

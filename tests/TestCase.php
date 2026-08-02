@@ -26,6 +26,8 @@ class TestCase extends TestbenchTestCase
             'hostname' => null,
             'options' => ['tls' => []],
             'max_request_size' => 10_000,
+            'max_channel_name_length' => 255,
+            'max_subscriptions_per_connection' => 250,
             'scaling' => [
                 'enabled' => false,
                 'channel' => 'reverb',
