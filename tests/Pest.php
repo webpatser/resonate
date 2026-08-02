@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use Revolt\EventLoop;
 use Webpatser\Resonate\Application;
 use Webpatser\Resonate\ConfigApplicationProvider;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
@@ -35,6 +36,26 @@ uses()->beforeEach(function () {
 
     $this->app->bind(ChannelConnectionManager::class, fn () => new ArrayChannelConnectionManager);
 })->in(__DIR__.'/Unit');
+
+/**
+ * Run the event loop until it has nothing referenced left to do.
+ *
+ * The watchdog is unreferenced so an idle loop returns immediately instead of
+ * sitting out the timeout. It is the upper bound for a loop that will not
+ * settle on its own, which the shared driver often will not: tests elsewhere in
+ * the suite leave repeating watchers behind, and the driver cannot be swapped
+ * for a clean one once any test has left a fiber suspended inside it.
+ */
+function drainLoop(float $timeout = 0.25): void
+{
+    $watchdog = EventLoop::delay($timeout, fn () => EventLoop::getDriver()->stop());
+
+    EventLoop::unreference($watchdog);
+
+    EventLoop::run();
+
+    EventLoop::cancel($watchdog);
+}
 
 /**
  * Create a defined number of channel connections.

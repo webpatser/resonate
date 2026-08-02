@@ -49,6 +49,7 @@ class Factory
         array $options = [],
         ?Driver $loop = null,
         int $fallbackMessageSize = 10_000,
+        int $maxOutboundQueueSize = RawConnection::DEFAULT_MAX_QUEUE_SIZE,
     ): HttpServer {
         if ($loop !== null) {
             EventLoop::setDriver($loop);
@@ -77,7 +78,7 @@ class Factory
 
         $socketServer->expose("{$host}:{$port}", $bindContext);
 
-        $router = self::makeRouter($path, $socketServer, $logger, $fallbackMessageSize);
+        $router = self::makeRouter($path, $socketServer, $logger, $fallbackMessageSize, $maxOutboundQueueSize);
 
         return new HttpServer($socketServer, $router, new DefaultErrorHandler);
     }
@@ -90,12 +91,17 @@ class Factory
         SocketHttpServer $socketServer,
         LoggerInterface $logger,
         int $fallbackMessageSize = 10_000,
+        int $maxOutboundQueueSize = RawConnection::DEFAULT_MAX_QUEUE_SIZE,
     ): Router {
         $router = new Router($path);
 
+        // Each connection gets its own bounded outbound queue and a single
+        // writer fiber, so a peer that stops reading suspends only its own
+        // writer instead of the fan-out walking the channel's subscribers.
         $handler = new WebSocketHandler(
             app(PusherServer::class),
             app(ApplicationProvider::class),
+            $maxOutboundQueueSize,
         );
 
         // Bound buffered websocket messages at the parser level so an oversized

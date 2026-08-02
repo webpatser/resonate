@@ -9,6 +9,7 @@ use Fledge\Async\Redis\RedisConfig;
 use Fledge\Async\Redis\RedisSubscriber;
 use Fledge\Async\Redis\RedisSubscription;
 use Throwable;
+use Webpatser\Resonate\Concurrency\SerialQueue;
 use Webpatser\Resonate\Loggers\Log;
 use Webpatser\Resonate\Scaling\Contracts\PubSubIncomingMessageHandler;
 use Webpatser\Resonate\Scaling\Contracts\PubSubProvider;
@@ -35,6 +36,15 @@ use function Fledge\Async\Redis\createRedisConnector;
  * subscriber (the old one is terminally stopped) and subscribes again. Without
  * it the node kept publishing but silently never received another broadcast,
  * terminate request or metrics reply until the process was restarted.
+ *
+ * Envelopes are handled by a {@see SerialQueue} rather than inline in the
+ * subscriber fiber. Handling one envelope can suspend (a metrics gather waits
+ * for sibling replies, and terminating a user walks its connections), and every
+ * suspension inline in the pump was time in which nothing else arriving over
+ * Redis was delivered: one congested peer used to hold up all cross-node
+ * traffic. The queue's single worker keeps envelopes in the order Redis
+ * delivered them, which is what the per-connection queues then preserve on the
+ * wire, while `iterate()` keeps draining the Redis connection.
  */
 class RedisPubSubProvider implements PubSubProvider
 {
@@ -59,6 +69,11 @@ class RedisPubSubProvider implements PubSubProvider
     protected ?Future $listener = null;
 
     /**
+     * The envelopes waiting to be handled, and the fiber handling them.
+     */
+    protected ?SerialQueue $envelopes = null;
+
+    /**
      * Whether disconnect() has been called, ending the resubscribe loop.
      */
     protected bool $stopped = false;
@@ -74,14 +89,21 @@ class RedisPubSubProvider implements PubSubProvider
     protected const RETRY_MAX_DELAY = 10.0;
 
     /**
+     * The default number of envelopes allowed to wait for the handler.
+     */
+    public const DEFAULT_MAX_QUEUED_MESSAGES = 10_000;
+
+    /**
      * Create a new Redis pub/sub provider instance.
      *
      * @param  array<string, mixed>  $server  The `reverb.servers.reverb.scaling.server` config.
+     * @param  int  $maxQueuedMessages  Envelopes allowed to wait before further ones are dropped. Zero disables the bound.
      */
     public function __construct(
         protected PubSubIncomingMessageHandler $messageHandler,
         protected string $channel,
         protected array $server = [],
+        protected int $maxQueuedMessages = self::DEFAULT_MAX_QUEUED_MESSAGES,
     ) {
         //
     }
@@ -118,10 +140,16 @@ class RedisPubSubProvider implements PubSubProvider
         $this->subscription?->unsubscribe();
         $this->publisher?->quit();
 
+        // Envelopes still waiting belong to a subscription that is going away,
+        // and a discarded queue refuses further pushes, so a listener fiber
+        // that has not yet noticed the stop cannot revive it.
+        $this->envelopes?->discard();
+
         $this->subscription = null;
         $this->subscriber = null;
         $this->publisher = null;
         $this->listener = null;
+        $this->envelopes = null;
     }
 
     /**
@@ -142,7 +170,7 @@ class RedisPubSubProvider implements PubSubProvider
                     $failures = 0;
 
                     foreach ($this->subscription as $message) {
-                        $this->messageHandler->handle($message);
+                        $this->enqueue((string) $message);
                     }
                 } catch (DisposedException) {
                     // Unsubscribed during disconnect; expected.
@@ -168,6 +196,38 @@ class RedisPubSubProvider implements PubSubProvider
                 }
             }
         });
+    }
+
+    /**
+     * Hand an envelope to the handler queue.
+     *
+     * Returns false when the envelope was dropped because the queue is full.
+     * Dropping the newest keeps the accepted envelopes in the order Redis sent
+     * them, and a bound has to exist somewhere: a handler slower than the
+     * publish rate would otherwise grow this queue until the process dies,
+     * which is the same failure the per-connection bound removes.
+     */
+    protected function enqueue(string $message): bool
+    {
+        $queue = $this->envelopes ??= new SerialQueue(
+            maxSize: $this->maxQueuedMessages,
+            onOverflow: fn () => Log::error(
+                'Resonate pub/sub dropped an envelope: '.$this->maxQueuedMessages.' already queued.'
+            ),
+            onError: fn (Throwable $e) => Log::error(
+                'Resonate pub/sub message handler failed: '.$e->getMessage()
+            ),
+        );
+
+        return $queue->push(fn () => $this->messageHandler->handle($message));
+    }
+
+    /**
+     * Get the queue feeding the message handler, if one has been created.
+     */
+    public function envelopes(): ?SerialQueue
+    {
+        return $this->envelopes;
     }
 
     /**

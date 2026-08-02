@@ -24,6 +24,7 @@ use Webpatser\Resonate\Scheduling\Scheduler;
 use Webpatser\Resonate\Server\ApplicationClientFactory;
 use Webpatser\Resonate\Server\Factory as ServerFactory;
 use Webpatser\Resonate\Server\HttpServer;
+use Webpatser\Resonate\Server\RawConnection;
 
 #[AsCommand(name: 'resonate:start')]
 class StartServer extends Command implements SignalableCommandInterface
@@ -93,6 +94,7 @@ class StartServer extends Command implements SignalableCommandInterface
             $config['options'] ?? [],
             EventLoop::getDriver(),
             $this->fallbackMessageSize(),
+            (int) ($config['max_outbound_queue_size'] ?? RawConnection::DEFAULT_MAX_QUEUE_SIZE),
         );
 
         $this->scheduler = app(Scheduler::class);

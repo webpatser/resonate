@@ -28,10 +28,13 @@ class WebSocketHandler implements WebsocketClientHandler
 
     /**
      * Create a new WebSocket handler instance.
+     *
+     * @param  int  $maxOutboundQueueSize  Frames one connection may queue before it is dropped.
      */
     public function __construct(
         protected Server $server,
         protected ApplicationProvider $applications,
+        protected int $maxOutboundQueueSize = RawConnection::DEFAULT_MAX_QUEUE_SIZE,
     ) {
         //
     }
@@ -58,7 +61,7 @@ class WebSocketHandler implements WebsocketClientHandler
         }
 
         $connection = new WebSocketConnection(
-            new RawConnection($client),
+            new RawConnection($client, $this->maxOutboundQueueSize),
             $application,
             $request->getHeader('origin'),
         );

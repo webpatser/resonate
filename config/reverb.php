@@ -57,10 +57,34 @@ return [
             */
             'max_channel_name_length' => env('REVERB_MAX_CHANNEL_NAME_LENGTH', 255),
             'max_subscriptions_per_connection' => env('REVERB_MAX_SUBSCRIPTIONS_PER_CONNECTION', 250),
+
+            /*
+            | Every connection has its own outbound queue drained by a single
+            | writer fiber, so one client that stops reading no longer stalls a
+            | channel broadcast. `max_outbound_queue_size` bounds how many
+            | messages may wait on one connection before it is closed with
+            | WebSocket code 1013 (try again later); without a bound, a client
+            | that never reads is a memory exhaustion vector. Budget for it as
+            | this number multiplied by your average payload multiplied by the
+            | connections that can fall behind at once. Set to 0 to disable the
+            | bound, which is only safe when every client is trusted.
+            */
+            'max_outbound_queue_size' => env('REVERB_MAX_OUTBOUND_QUEUE_SIZE', 1_000),
             'drain_timeout' => env('REVERB_DRAIN_TIMEOUT', 30),
             'scaling' => [
                 'enabled' => env('REVERB_SCALING_ENABLED', false),
                 'channel' => env('REVERB_SCALING_CHANNEL', 'reverb'),
+
+                /*
+                | Incoming pub/sub envelopes are queued and handled by a single
+                | fiber, so a slow envelope cannot stall the subscriber pump and
+                | with it every other node's broadcasts, terminate requests and
+                | metrics replies. `max_queued_messages` bounds that queue;
+                | envelopes arriving while it is full are dropped and logged
+                | rather than buffered without limit. Set to 0 to disable.
+                */
+                'max_queued_messages' => env('REVERB_SCALING_MAX_QUEUED_MESSAGES', 10_000),
+
                 'server' => [
                     'url' => env('REDIS_URL'),
                     'host' => env('REDIS_HOST', '127.0.0.1'),

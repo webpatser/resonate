@@ -104,6 +104,14 @@ A connection whose app key resolves to no application is closed with pusher code
 
 Both checks run before `findOrCreate()`, which otherwise allocates a Channel for any name it is handed. Set either to `0` to disable.
 
+### Outbound queue limits
+
+Every connection has its own outbound queue drained by a single writer fiber. A peer that stops reading suspends only its own writer, so it can no longer stall a channel fan-out (or the fiber that issued the broadcast) by refusing to drain its socket. Ordering within a connection is unchanged: one writer per connection means frames leave in the order they were queued.
+
+`servers.reverb.max_outbound_queue_size` (default `1000` messages) bounds how many messages may wait on one connection. A connection that exceeds it is closed with WebSocket close code `1013` (try again later) and its queue is dropped, because unbounded buffering would trade a stall for memory exhaustion. Budget for the limit as the bound multiplied by your average payload multiplied by the number of connections that can fall behind at once. Set to `0` to disable the bound, which is only safe when every client is trusted.
+
+`servers.reverb.scaling.max_queued_messages` (default `10_000` envelopes) does the same for inbound pub/sub envelopes, which are handled by one worker so the subscriber pump is never held up by a slow envelope. Envelopes arriving while that queue is full are dropped and logged. Set to `0` to disable.
+
 ### Client events
 
 The Pusher protocol restricts client events (`client-*`) to private and presence channels, and only allows subscribed clients to whisper. Resonate enforces both rules in `'members'` mode (default) AND in `'all'` mode; the only difference between the two is the source of the membership claim. A sender-supplied `user_id` in the event payload is overridden with the channel-authenticated value, never echoed.

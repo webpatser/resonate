@@ -125,6 +125,10 @@ class ResonateServiceProvider extends ServiceProvider
                 $app->make(PubSubIncomingMessageHandler::class),
                 config('reverb.servers.reverb.scaling.channel', 'reverb'),
                 config('reverb.servers.reverb.scaling.server', []),
+                (int) config(
+                    'reverb.servers.reverb.scaling.max_queued_messages',
+                    RedisPubSubProvider::DEFAULT_MAX_QUEUED_MESSAGES
+                ),
             )
         );
 
