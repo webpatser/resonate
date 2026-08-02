@@ -15,6 +15,7 @@ use Webpatser\Resonate\Contracts\ServerProvider;
 use Webpatser\Resonate\Jobs\PingInactiveConnections;
 use Webpatser\Resonate\Jobs\PruneStaleConnections;
 use Webpatser\Resonate\Loggers\CliLogger;
+use Webpatser\Resonate\Loggers\Log;
 use Webpatser\Resonate\Plugins\PluginManager;
 use Webpatser\Resonate\Scaling\Contracts\PubSubProvider;
 use Webpatser\Resonate\Scheduling\Scheduler;
@@ -34,6 +35,7 @@ class StartServer extends Command implements SignalableCommandInterface
                 {--port= : The port the server should listen on}
                 {--path= : The path the server should prefix to all routes}
                 {--hostname= : The hostname the server is accessible from}
+                {--force : Start even when the PID file names a running server (used by resonate:reload)}
                 {--debug : Indicates whether debug messages should be displayed in the terminal}';
 
     /**
@@ -56,8 +58,17 @@ class StartServer extends Command implements SignalableCommandInterface
     /**
      * Execute the console command.
      */
-    public function handle(): void
+    public function handle(): int
     {
+        if (! $this->option('force') && ($runningPid = static::readPid()) !== null) {
+            $this->components->error(
+                "A Resonate server is already running (PID: {$runningPid}). ".
+                'Stop it first, use resonate:reload for a zero-downtime swap, or pass --force to start anyway.'
+            );
+
+            return self::FAILURE;
+        }
+
         if ($this->option('debug')) {
             $this->laravel->instance(Logger::class, new CliLogger($this->output));
         }
@@ -85,7 +96,14 @@ class StartServer extends Command implements SignalableCommandInterface
         $this->ensurePulseEventsAreCollected($config['pulse_ingest_interval'] ?? 15);
         $this->ensureTelescopeEntriesAreCollected($config['telescope_ingest_interval'] ?? 15);
 
-        $this->writePidFile();
+        // The PID file is the discovery handle for `resonate:reload`, so it may
+        // only be published once this process is actually accepting. Writing it
+        // at boot meant a replacement that died during startup left the file
+        // pointing at a dead PID while the still-serving old server became
+        // undiscoverable, and the next reload errored with "no running server
+        // found" after unlinking it. `onListening` fires after the listening
+        // sockets are bound and the accept loops are queued.
+        $this->server->onListening(fn () => $this->publishRuntimeState($host, (int) $port, $path));
 
         // Belt and braces for the paths that bypass the finally below, such as
         // the Windows control handler or a fatal error mid-loop.
@@ -98,6 +116,8 @@ class StartServer extends Command implements SignalableCommandInterface
         } finally {
             $this->removePidFile();
         }
+
+        return self::SUCCESS;
     }
 
     /**
@@ -314,6 +334,137 @@ class StartServer extends Command implements SignalableCommandInterface
     }
 
     /**
+     * Get the path to the runtime metadata file.
+     *
+     * Sits next to the PID file and records the address this process actually
+     * bound to. `resonate:reload` needs it because the running server may have
+     * been started with `--host`, `--port` or `--path` overrides that are
+     * nowhere in the config: without them the replacement would bind the config
+     * port and the health probe would poll an address nobody is serving.
+     */
+    public static function runtimeFilePath(): string
+    {
+        return storage_path('resonate.json');
+    }
+
+    /**
+     * Read the runtime metadata for the running server.
+     *
+     * Returns null when the file is missing, unreadable, not the expected
+     * shape, or (when `$expectedPid` is given) when it describes a different
+     * process than the one we are about to act on.
+     *
+     * @return array{pid: int, host: string, port: int, path: string}|null
+     */
+    public static function readRuntime(?int $expectedPid = null): ?array
+    {
+        $path = static::runtimeFilePath();
+
+        if (! file_exists($path) || is_link($path)) {
+            return null;
+        }
+
+        $contents = @file_get_contents($path);
+
+        if (! is_string($contents)) {
+            return null;
+        }
+
+        $decoded = json_decode($contents, true);
+
+        if (! is_array($decoded) || ! isset($decoded['pid'], $decoded['host'], $decoded['port'])) {
+            return null;
+        }
+
+        $pid = (int) $decoded['pid'];
+
+        if ($expectedPid !== null && $pid !== $expectedPid) {
+            return null;
+        }
+
+        return [
+            'pid' => $pid,
+            'host' => (string) $decoded['host'],
+            'port' => (int) $decoded['port'],
+            'path' => (string) ($decoded['path'] ?? ''),
+        ];
+    }
+
+    /**
+     * Publish this process as the running server.
+     *
+     * Called from the server's `onListening` hook, so by the time the PID file
+     * exists the process behind it is genuinely accepting connections.
+     */
+    protected function publishRuntimeState(string $host, int $port, string $path): void
+    {
+        $this->writePidFile();
+        $this->writeRuntimeFile($host, $port, $path);
+    }
+
+    /**
+     * Write the runtime metadata file atomically.
+     *
+     * Mirrors {@see writePidFile()}: same symlink refusal, same tmp + rename.
+     * A failure here is logged rather than thrown, because the server is
+     * already accepting connections at this point and losing the reload hint
+     * is not worth tearing a serving process down for.
+     */
+    protected function writeRuntimeFile(string $host, int $port, string $path): void
+    {
+        $target = static::runtimeFilePath();
+
+        if (is_link($target)) {
+            Log::error("Refusing to write runtime metadata: {$target} is a symlink.");
+
+            return;
+        }
+
+        $payload = json_encode([
+            'pid' => getmypid(),
+            'host' => $host,
+            'port' => $port,
+            'path' => $path,
+        ]);
+
+        $tmpPath = $target.'.'.getmypid().'.tmp';
+
+        if ($payload === false || file_put_contents($tmpPath, $payload, LOCK_EX) === false) {
+            Log::error("Failed to write runtime metadata at {$target}.");
+
+            return;
+        }
+
+        if (! rename($tmpPath, $target)) {
+            @unlink($tmpPath);
+
+            Log::error("Failed to move runtime metadata to {$target}.");
+        }
+    }
+
+    /**
+     * Remove the runtime metadata file on shutdown.
+     *
+     * Same "only mine" rule as {@see removePidFile()}: after a reload the new
+     * server has already rewritten this file, and the draining old server must
+     * not delete it.
+     */
+    protected function removeRuntimeFile(): void
+    {
+        $path = static::runtimeFilePath();
+
+        if (! file_exists($path) || is_link($path)) {
+            return;
+        }
+
+        $runtime = static::readRuntime();
+
+        if ($runtime !== null && $runtime['pid'] === getmypid()) {
+            @unlink($path);
+        }
+    }
+
+    /**
      * Write the server PID to the PID file atomically.
      *
      * Refuses to start if the PID path already exists as a symlink: unlinking
@@ -342,7 +493,7 @@ class StartServer extends Command implements SignalableCommandInterface
     }
 
     /**
-     * Remove the PID file on shutdown.
+     * Remove the PID file (and the runtime metadata beside it) on shutdown.
      *
      * After a zero-downtime reload the new server has already rewritten
      * `storage/resonate.pid` with its own PID; we must not clobber that when
@@ -353,15 +504,11 @@ class StartServer extends Command implements SignalableCommandInterface
     {
         $path = static::pidFilePath();
 
-        if (! file_exists($path) || is_link($path)) {
-            return;
-        }
-
-        $pidInFile = (int) @file_get_contents($path);
-
-        if ($pidInFile === getmypid()) {
+        if (file_exists($path) && ! is_link($path) && (int) @file_get_contents($path) === getmypid()) {
             @unlink($path);
         }
+
+        $this->removeRuntimeFile();
     }
 
     /**

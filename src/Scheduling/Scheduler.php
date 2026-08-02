@@ -30,6 +30,13 @@ class Scheduler
     protected array $tasks = [];
 
     /**
+     * Ids of recurring tasks whose previous run has not finished yet.
+     *
+     * @var array<string, true>
+     */
+    protected array $running = [];
+
+    /**
      * Create a new scheduler.
      */
     public function __construct(protected Logger $logger)
@@ -40,21 +47,55 @@ class Scheduler
     /**
      * Register a recurring task.
      *
+     * Runs are serialised per registration: while a run is still pending the
+     * next tick is skipped instead of starting a second fiber. Without this a
+     * task that outlives its interval (a maintenance sweep against a slow Redis,
+     * say) accumulates overlapping fibers, and the overlap is not merely wasted
+     * work: two sweeps walking the same connections emit duplicate events for
+     * the same connection. The guard is per registration rather than per name
+     * because several distinct tasks legitimately share a name (every plugin
+     * tick registers as `plugin:tick`), and those must not block each other.
+     *
      * Returns the Revolt callback id, which can be passed to {@see cancel()}.
      */
     public function repeat(float $interval, callable $callback, string $name): string
     {
         $guard = $this->guard($name, $callback);
 
-        $id = EventLoop::repeat($interval, static function () use ($guard): void {
+        $id = EventLoop::repeat($interval, function () use (&$id, $guard, $name): void {
+            if (isset($this->running[$id])) {
+                $this->logger->info(
+                    'Scheduler',
+                    "Skipping tick for [{$name}]: the previous run has not finished yet."
+                );
+
+                return;
+            }
+
+            $this->running[$id] = true;
+
             // async() returns a Future; the task is fire-and-forget, and the
             // guard already captures any failure, so the Future is discarded.
-            (void) async($guard);
+            (void) async(function () use (&$id, $guard): void {
+                try {
+                    $guard();
+                } finally {
+                    unset($this->running[$id]);
+                }
+            });
         });
 
         $this->tasks[$id] = ['id' => $id, 'name' => $name, 'interval' => $interval, 'type' => 'repeat'];
 
         return $id;
+    }
+
+    /**
+     * Determine whether a recurring task's previous run is still pending.
+     */
+    public function isRunning(string $id): bool
+    {
+        return isset($this->running[$id]);
     }
 
     /**
@@ -84,7 +125,7 @@ class Scheduler
     {
         EventLoop::cancel($id);
 
-        unset($this->tasks[$id]);
+        unset($this->tasks[$id], $this->running[$id]);
     }
 
     /**
@@ -100,6 +141,7 @@ class Scheduler
         }
 
         $this->tasks = [];
+        $this->running = [];
     }
 
     /**

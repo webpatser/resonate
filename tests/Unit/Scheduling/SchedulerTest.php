@@ -69,6 +69,91 @@ it('isolates a throwing task and keeps the timer alive', function () {
         ->and($this->logger->errors[0])->toContain('Scheduled task [flaky] failed: boom');
 });
 
+/*
+ * Regression: no re-entrancy guard.
+ *
+ * `repeat()` fired `async()` on every tick regardless of whether the previous
+ * run had finished, so a task that outlives its interval (a maintenance sweep
+ * against a slow Redis, say) accumulated overlapping fibers. That is not merely
+ * wasted work: two sweeps walking the same connections emit duplicate events
+ * for the same connection.
+ */
+it('skips a tick while the previous run of the same task is still pending', function () {
+    $started = 0;
+    $finished = 0;
+    $suspension = null;
+
+    // A task that never returns within the test window: every subsequent tick
+    // must be skipped rather than starting a second run.
+    $id = $this->scheduler->repeat(0.01, function () use (&$started, &$finished, &$suspension): void {
+        $started++;
+        $suspension = EventLoop::getSuspension();
+        $suspension->suspend();
+        $finished++;
+    }, 'slow:sweep');
+
+    EventLoop::delay(0.15, static fn () => EventLoop::getDriver()->stop());
+    EventLoop::run();
+
+    expect($started)->toBe(1)
+        ->and($finished)->toBe(0)
+        ->and($this->scheduler->isRunning($id))->toBeTrue()
+        // Every skipped tick says so, so an overrunning task is visible.
+        ->and(count($this->logger->info))->toBeGreaterThan(1)
+        ->and($this->logger->info[0]['message'])->toContain('[slow:sweep]');
+
+    // Let the pending run finish; the task becomes eligible again, so the next
+    // tick starts a fresh run instead of staying wedged forever.
+    $suspension->resume();
+
+    EventLoop::delay(0.05, static fn () => EventLoop::getDriver()->stop());
+    EventLoop::run();
+
+    expect($finished)->toBe(1)
+        ->and($started)->toBeGreaterThan(1);
+});
+
+it('releases the guard when a run throws so the task is not wedged forever', function () {
+    $runs = 0;
+
+    $id = $this->scheduler->repeat(0.01, function () use (&$runs): void {
+        $runs++;
+
+        throw new RuntimeException('boom');
+    }, 'flaky');
+
+    EventLoop::delay(0.1, static fn () => EventLoop::getDriver()->stop());
+    EventLoop::run();
+
+    expect($runs)->toBeGreaterThan(1)
+        ->and($this->scheduler->isRunning($id))->toBeFalse();
+});
+
+it('guards each registration separately so tasks sharing a name do not block each other', function () {
+    // Every plugin tick registers under the name `plugin:tick`; a per-name
+    // guard would let one slow plugin starve all the others.
+    $runs = [0, 0];
+    $suspension = null;
+
+    $this->scheduler->repeat(0.01, function () use (&$runs, &$suspension): void {
+        $runs[0]++;
+        $suspension = EventLoop::getSuspension();
+        $suspension->suspend();
+    }, 'plugin:tick');
+
+    $this->scheduler->repeat(0.01, function () use (&$runs): void {
+        $runs[1]++;
+    }, 'plugin:tick');
+
+    EventLoop::delay(0.15, static fn () => EventLoop::getDriver()->stop());
+    EventLoop::run();
+
+    expect($runs[0])->toBe(1)
+        ->and($runs[1])->toBeGreaterThan(1);
+
+    $suspension->resume();
+});
+
 it('runs a one-shot task once and then forgets it', function () {
     $runs = 0;
 
