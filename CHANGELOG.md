@@ -2,6 +2,16 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## v0.6.1 - 2026-08-27
+
+Patch release porting the one substantive fix from Reverb v1.11.1 (2026-08-11).
+
+### Fixed
+- `ArrayChannelManager::connections()` now prefers a connection wrapper that carries a `user_id` over an anonymous wrapper for the same socket when flattening channels (Reverb #399). A socket subscribed to several channels appears once per channel under the same identifier, and the previous `+=` merge kept whichever channel was iterated first; since only some subscriptions carry the user identity, `terminate_connections` could report success while the socket stayed connected, on both the HTTP path and the cross-node pub/sub path, and app-wide metrics could under-count identified users. Reverb's companion `data('user_id')` accessor hardening was already in place here since v0.4.1.
+
+### Parity
+- Reverb v1.11.1 reviewed in full: #399 ported (above), #396 is a CI checkout-action bump with nothing to port. No unreleased upstream commits beyond v1.11.1 at the time of this release.
+
 ## v0.6.0 - 2026-08-02
 
 Correctness and hardening release from a full audit of the server and its plugin family. Several changes touch public API or what the server accepts, which is why this is a minor bump. Read Upgrading first.

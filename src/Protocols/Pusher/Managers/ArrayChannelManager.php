@@ -130,7 +130,14 @@ class ArrayChannelManager implements ChannelManagerInterface
         $result = [];
 
         foreach ($channels as $ch) {
-            $result += $ch->connections();
+            foreach ($ch->connections() as $identifier => $connection) {
+                // A socket subscribed to several channels appears once per channel under the
+                // same identifier, and only some subscriptions carry the user identity, so an
+                // identified wrapper must win over an anonymous one for the same socket.
+                if (! isset($result[$identifier]) || ($result[$identifier]->data('user_id') === null && $connection->data('user_id') !== null)) {
+                    $result[$identifier] = $connection;
+                }
+            }
         }
 
         return $result;
