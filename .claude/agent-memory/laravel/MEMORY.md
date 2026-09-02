@@ -1,0 +1,1 @@
+- [Resonate maintenance workflow](project_resonate_maintenance.md) — dependency-bump/changelog pattern, no Pint in this repo
