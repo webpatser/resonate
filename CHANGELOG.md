@@ -2,6 +2,12 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## Unreleased
+
+### Changed
+
+- Document `webpatser/resonate-users` in the first-party plugin table of `docs/plugins.md`. It implements the Pusher protocol's `pusher:signin`, which this server does not handle on its own, so a connection can carry a user identity without joining a presence channel.
+
 ## v0.6.2 - 2026-09-02
 
 ### Changed
