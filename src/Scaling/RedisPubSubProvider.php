@@ -338,29 +338,23 @@ class RedisPubSubProvider implements PubSubProvider
 
     /**
      * Build the fledge-fiber Redis configuration from the scaling server config.
+     *
+     * `RedisConfig::fromParameters()` reads the Laravel-shaped connection array
+     * directly. This used to assemble a `redis://user:pass@host:port/db` string
+     * by hand, and everything a URI cannot carry was dropped on the way: the
+     * `tls` / `rediss` scheme, unix socket paths, `read_timeout`, the retry
+     * settings, the client name and tcp keepalive. A configured `url` still
+     * wins, since that form is a URI to begin with.
      */
     protected function makeConfig(): RedisConfig
     {
-        $timeout = (float) ($this->server['timeout'] ?? RedisConfig::DEFAULT_TIMEOUT);
-
         if (! empty($this->server['url'])) {
-            return RedisConfig::fromUri($this->server['url'], $timeout);
+            return RedisConfig::fromUri(
+                (string) $this->server['url'],
+                (float) ($this->server['timeout'] ?? RedisConfig::DEFAULT_TIMEOUT),
+            );
         }
 
-        $host = $this->server['host'] ?? '127.0.0.1';
-        $port = $this->server['port'] ?? 6379;
-        $database = $this->server['database'] ?? 0;
-
-        $userInfo = '';
-
-        if (! empty($this->server['password'])) {
-            $userInfo = rawurlencode((string) ($this->server['username'] ?? ''))
-                .':'.rawurlencode((string) $this->server['password']).'@';
-        }
-
-        return RedisConfig::fromUri(
-            sprintf('redis://%s%s:%s/%s', $userInfo, $host, $port, $database),
-            $timeout,
-        );
+        return RedisConfig::fromParameters($this->server);
     }
 }

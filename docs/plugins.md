@@ -37,10 +37,10 @@ Before building your own, check whether one of these already does it. Each is a 
 
 A few combinations earn their keep together:
 
-- **roster + webhooks + channel-meter** — push channel activity to the Laravel app and have it bill or audit channel sessions. The original *roster → webhooks → meter* arc.
-- **roster + webhooks + pulse** — see the whole cluster's behaviour on the Pulse dashboard. The pulse cards consume the events the webhooks plugin emits.
-- **token-auth + user-cap** — let mobile clients authenticate without cookies and cap their device fan-out.
-- **delivery + anything** — reconnect-replay is independent and pairs with every other plugin.
+- **roster + webhooks + channel-meter**: push channel activity to the Laravel app and have it bill or audit channel sessions. The original roster to webhooks to meter arc.
+- **roster + webhooks + pulse**: see the whole cluster's behaviour on the Pulse dashboard. The pulse cards consume the events the webhooks plugin emits.
+- **token-auth + user-cap**: let mobile clients authenticate without cookies and cap their device fan-out.
+- **delivery + anything**: reconnect-replay is independent and pairs with every other plugin.
 
 For full setup, config, security notes, and protocol details, follow the link to each package's README. The rest of this document is for building your own plugin.
 
@@ -247,7 +247,7 @@ Every plugin call - `boot()`, `onMessage()`, the lifecycle hooks, `ticks()`, and
 
 ## Notes and caveats
 
-- **Ticks are not re-entrant for you.** The loop fires the next tick on schedule whether or not the previous one finished. If a callback can outrun its interval, guard against overlap yourself (for example, a boolean "running" flag in plugin state).
+- **Ticks are serialised for you.** Since v0.6.0 the scheduler will not start a tick while the previous run of the same registration is still pending; it skips that beat and logs it. A callback that outruns its interval therefore needs no "running" flag of its own, and it simply runs less often than its interval asks for. Serialisation is per registration, so one plugin's slow tick never holds up another's.
 - **`onUnsubscribe` vs `onClose`.** `onUnsubscribe` fires for the explicit `pusher:unsubscribe` event - a connection leaving one channel while staying open. A connection that closes is reported once through `onClose`, not as one `onUnsubscribe` per channel. `PluginContext::unsubscribe()` is a direct server-side action and does not itself emit `onUnsubscribe`.
 - **Reading the presence `user_id`.** In `onSubscribe` / `onUnsubscribe` you get the `Connection` and the `Channel`. For a presence channel the subscribing user's id lives in the `ChannelConnection`: `$channel->connections()[$connection->id()]?->data('user_id')`.
 - **`terminate()` is local.** It only ends connections on the node that runs it. Cross-node termination needs a pub/sub envelope.

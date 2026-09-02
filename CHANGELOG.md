@@ -2,6 +2,17 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## Unreleased
+
+### Changed
+
+- Require `webpatser/fledge-fiber` `^13.29` (was `^13.4`). The floor is where `RedisConfig::fromParameters()` landed, and the range below it is where the Redis client learned to percent-decode URI credentials, send a two-argument `AUTH` for ACL usernames, accept `rediss://`, and back off instead of storming a reconnect after a wire parse failure.
+- `RedisPubSubProvider` builds its connection with `RedisConfig::fromParameters()` instead of assembling a `redis://user:pass@host:port/db` string. The hand-built URI could not carry a `tls` or `rediss` scheme, a unix socket path, `read_timeout`, the retry settings, a client name or tcp keepalive, so every one of those was dropped on the way to the connection. A `url` in the scaling server config is still honoured, since that form is a URI already.
+
+### Fixed
+
+- `Plugins\Contracts\TickScheduler` and `docs/plugins.md` told plugin authors that the loop fires the next tick whether or not the previous one finished, and that a slow callback must guard against overlap itself. v0.6.0 made the scheduler serialise runs per registration; both now describe what the server actually does.
+
 ## v0.6.1 - 2026-08-27
 
 Patch release porting the one substantive fix from Reverb v1.11.1 (2026-08-11).
