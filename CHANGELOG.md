@@ -2,6 +2,12 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## Unreleased
+
+### Parity
+
+- Reverb v1.11.1 reviewed against upstream `main` through `dbcb96d7` (2026-09-10): the handshake-failure close in `Router::attemptUpgrade()` does not apply, the fledge-fiber `Websocket` acceptor already refuses non-101 negotiations with `connection: close`. Nothing to port. Framework v13.32.0 adds a Mercure driver to `BroadcastManager` via the `CreatesMercureDrivers` trait; the injected manager's shape is unchanged.
+
 ## v0.6.3 - 2026-09-14
 
 ### Changed
