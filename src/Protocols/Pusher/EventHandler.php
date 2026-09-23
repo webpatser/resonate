@@ -5,15 +5,20 @@ namespace Webpatser\Resonate\Protocols\Pusher;
 use Exception;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Throwable;
 use Webpatser\Resonate\Contracts\Connection;
+use Webpatser\Resonate\Contracts\ServerProvider;
 use Webpatser\Resonate\Plugins\PluginManager;
 use Webpatser\Resonate\Protocols\Pusher\Channels\CacheChannel;
 use Webpatser\Resonate\Protocols\Pusher\Channels\Channel;
+use Webpatser\Resonate\Protocols\Pusher\Concerns\InteractsWithChannelInformation;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\Exceptions\SubscriptionLimitExceeded;
 
 class EventHandler
 {
+    use InteractsWithChannelInformation;
+
     /**
      * Create a new Pusher event instance.
      */
@@ -153,7 +158,7 @@ class EventHandler
      */
     protected function afterSubscribe(Channel $channel, Connection $connection): void
     {
-        $this->sendInternally($connection, 'subscription_succeeded', $channel->data(), $channel->name());
+        $this->sendInternally($connection, 'subscription_succeeded', $this->subscriptionData($channel, $connection), $channel->name());
 
         match (true) {
             $channel instanceof CacheChannel => $this->sendCachedPayload($channel, $connection),
@@ -161,6 +166,45 @@ class EventHandler
         };
 
         $this->plugins->notifySubscribe($connection, $channel);
+    }
+
+    /**
+     * Get the data a new subscriber receives with `subscription_succeeded`.
+     *
+     * With scaling on, a presence channel's members are spread over every
+     * node, so the member list is gathered fleet-wide. A failed gather falls
+     * back to this node's members: a partial list beats a failed subscribe.
+     *
+     * @return array<string, mixed>
+     */
+    protected function subscriptionData(Channel $channel, Connection $connection): array
+    {
+        if (! $this->isPresenceChannel($channel) || $this->scalingDisabled()) {
+            return $channel->data();
+        }
+
+        try {
+            $gathered = app(MetricsHandler::class)->gather(
+                $connection->app(),
+                MetricType::PRESENCE_DATA->value,
+                ['channel' => $channel->name()],
+            );
+        } catch (Throwable) {
+            return $channel->data();
+        }
+
+        return is_array($gathered['presence'] ?? null)
+            ? ['presence' => $gathered['presence']]
+            : $channel->data();
+    }
+
+    /**
+     * Determine whether this node runs without horizontal scaling.
+     */
+    protected function scalingDisabled(): bool
+    {
+        return ! app()->bound(ServerProvider::class)
+            || app(ServerProvider::class)->shouldNotPublishEvents();
     }
 
     /**

@@ -83,7 +83,7 @@ it('can return data stored on the connection', function () {
 });
 
 it('sends notification of subscription', function () {
-    $channel = new PresenceChannel('presence-test-channel');
+    $channel = channels()->findOrCreate('presence-test-channel');
 
     $this->channelConnectionManager->shouldReceive('add')
         ->once()
@@ -102,7 +102,7 @@ it('sends notification of subscription', function () {
 });
 
 it('sends notification of subscription with data', function () {
-    $channel = new PresenceChannel('presence-test-channel');
+    $channel = channels()->findOrCreate('presence-test-channel');
     $data = json_encode(['name' => 'Joe']);
 
     $this->channelConnectionManager->shouldReceive('add')
@@ -130,7 +130,7 @@ it('sends notification of subscription with data', function () {
 });
 
 it('sends notification of an unsubscribe', function () {
-    $channel = new PresenceChannel('presence-test-channel');
+    $channel = channels()->findOrCreate('presence-test-channel');
     $data = json_encode(['user_info' => ['name' => 'Joe'], 'user_id' => 1]);
 
     $channel->subscribe(
@@ -214,3 +214,13 @@ it('rejects a subscribe with no channel_data when the HMAC was signed with chann
 
     $channel->subscribe($this->connection, $auth, null);
 })->throws(ConnectionUnauthorized::class);
+
+it('lists a member without user_info as an empty object', function () {
+    $channel = new PresenceChannel('presence-test-channel');
+
+    $this->channelConnectionManager->shouldReceive('all')
+        ->andReturn(factory(data: ['user_id' => 1]));
+
+    expect(json_encode($channel->data()))
+        ->toBe('{"presence":{"count":1,"ids":[1],"hash":{"1":{}}}}');
+});

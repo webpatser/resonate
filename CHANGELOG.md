@@ -2,11 +2,12 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
-## Unreleased
+## v0.7.0 - 2026-09-23
 
 ### Parity
 
-- Reverb v1.11.1 reviewed against upstream `main` through `dbcb96d7` (2026-09-10): the handshake-failure close in `Router::attemptUpgrade()` does not apply, the fledge-fiber `Websocket` acceptor already refuses non-101 negotiations with `connection: close`. Nothing to port. Framework v13.32.0 adds a Mercure driver to `BroadcastManager` via the `CreatesMercureDrivers` trait; the injected manager's shape is unchanged.
+- Reverb v1.12.0 reviewed against upstream `main` through `e233471f` (2026-09-22): ported the scaled presence-channel fix (#408): presence `member_added` and `member_removed` now go through the event dispatcher so they reach clients on every node, while `pusher_internal:*` events are delivered without touching a cache channel's stored payload; across nodes `member_added` fires only for a user's first connection and `member_removed` only when the last one leaves (ordered by the new `ChannelConnection::subscribedAt()`, socket id breaking ties, announcing anyway if the gather fails); `subscription_succeeded` on a presence channel carries the members of every node (new `presence_data` and `presence_connections` metric types); a member without `user_info` gets `{}` in `hash`, and merged channel users are always a list. The signature timestamp check (`2f8a1218`) was already in place (`auth_timestamp_grace`, default 600s). #407 only changes tests.
+- Framework v13.32.0 adds a Mercure driver to `BroadcastManager` via the `CreatesMercureDrivers` trait; the injected manager's shape is unchanged.
 
 ## v0.6.3 - 2026-09-14
 

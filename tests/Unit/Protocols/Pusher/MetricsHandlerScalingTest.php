@@ -4,6 +4,7 @@ use Webpatser\Resonate\Contracts\ApplicationProvider;
 use Webpatser\Resonate\Contracts\ServerProvider;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\MetricsHandler;
+use Webpatser\Resonate\Protocols\Pusher\MetricType;
 use Webpatser\Resonate\Scaling\Contracts\PubSubProvider;
 use Webpatser\Resonate\Tests\Fakes\FakeConnection;
 use Webpatser\Resonate\Tests\Fakes\FakePubSubBus;
@@ -30,6 +31,9 @@ beforeEach(function () {
 function scaledMetrics(float $collectionWindow = 5.0): MetricsHandler
 {
     $handler = new MetricsHandler(app(ChannelManager::class), $collectionWindow);
+
+    // Presence channels gather through the container while subscribing.
+    app()->instance(MetricsHandler::class, $handler);
 
     // Redis delivers a node its own publications: the publisher and the
     // subscriber are separate connections on the same channel.
@@ -274,4 +278,67 @@ it('reads local metrics directly when scaling is disabled', function () {
         'info' => 'occupied,subscription_count',
     ]))->toBe(['occupied' => true, 'subscription_count' => 1])
         ->and($this->bus->published)->toBeEmpty();
+});
+
+it('answers presence_connections with the connections of one user on this node', function () {
+    $handler = scaledMetrics();
+
+    $first = presenceUser('presence-test-channel', 1);
+    $second = presenceUser('presence-test-channel', 1);
+    presenceUser('presence-test-channel', 2);
+
+    $connections = $handler->local($this->application, MetricType::PRESENCE_CONNECTIONS, [
+        'channel' => 'presence-test-channel',
+        'user_id' => '1',
+    ]);
+
+    expect($connections)->toHaveCount(2)
+        ->and(array_column($connections, 'id'))->toEqualCanonicalizing([$first->id(), $second->id()])
+        ->and($connections[0]['subscribed_at'])->toBeFloat()
+        ->and($connections[1]['subscribed_at'])->toBeFloat();
+});
+
+it('answers presence_connections for an unknown channel with an empty list', function () {
+    $handler = scaledMetrics();
+
+    expect($handler->local($this->application, MetricType::PRESENCE_CONNECTIONS, [
+        'channel' => 'presence-missing-channel',
+        'user_id' => '1',
+    ]))->toBe([]);
+});
+
+it('merges presence data across two nodes', function () {
+    $handler = scaledMetrics();
+
+    siblingNode(['presence' => [
+        'count' => 2,
+        'ids' => [1, 3],
+        'hash' => [1 => ['name' => 'User 1'], 3 => []],
+    ]]);
+
+    presenceUser('presence-test-channel', 1);
+    presenceUser('presence-test-channel', 2);
+
+    $data = $handler->gather($this->application, 'presence_data', ['channel' => 'presence-test-channel']);
+
+    expect($data['presence']['count'])->toBe(3)
+        ->and($data['presence']['ids'])->toBe([1, 3, 2])
+        ->and(json_encode($data['presence']['hash']))
+        ->toBe('{"1":{"name":"User 1"},"3":{},"2":{"name":"User 2"}}');
+});
+
+it('merges channel users across two nodes into a list without duplicates', function () {
+    $handler = scaledMetrics();
+
+    siblingNode([['id' => 1], ['id' => 3]]);
+
+    presenceUser('presence-test-channel', 1);
+    presenceUser('presence-test-channel', 2);
+
+    $users = $handler->gather($this->application, 'channel_users', [
+        'channel' => 'presence-test-channel',
+    ]);
+
+    expect(array_is_list($users))->toBeTrue()
+        ->and($users)->toBe([['id' => 1], ['id' => 3], ['id' => 2]]);
 });

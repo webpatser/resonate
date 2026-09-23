@@ -36,13 +36,29 @@ use Webpatser\Resonate\Contracts\Connection;
 class ChannelConnection
 {
     /**
+     * When the connection joined the channel, as a Unix timestamp with microseconds.
+     *
+     * Presence channels compare this across nodes to decide which of a user's
+     * connections is the first one, and so which node announces the member.
+     */
+    protected float $subscribedAt;
+
+    /**
      * Create a new channel connection instance.
      *
      * @param  array<string, mixed>  $data
      */
     public function __construct(protected Connection $connection, protected array $data = [])
     {
-        //
+        $this->subscribedAt = microtime(true);
+    }
+
+    /**
+     * Get when the connection joined the channel.
+     */
+    public function subscribedAt(): float
+    {
+        return $this->subscribedAt;
     }
 
     /**

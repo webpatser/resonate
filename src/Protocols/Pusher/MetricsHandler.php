@@ -128,6 +128,8 @@ class MetricsHandler
             MetricType::CHANNELS => $this->channelsMetric($application, $options),
             MetricType::CHANNEL_USERS => $this->channelUsers($application, $options),
             MetricType::CONNECTIONS => $this->connections($application),
+            MetricType::PRESENCE_DATA => $this->presenceData($application, $options),
+            MetricType::PRESENCE_CONNECTIONS => $this->presenceConnections($application, $options),
         };
     }
 
@@ -320,7 +322,48 @@ class MetricsHandler
             MetricType::CHANNELS => $this->mergeChannels($sets),
             MetricType::CHANNEL => $this->mergeChannel($sets),
             MetricType::CHANNEL_USERS => collect($sets)->flatten(1)->unique()->values()->all(),
+            MetricType::PRESENCE_DATA => $this->mergePresenceData($sets),
+            MetricType::PRESENCE_CONNECTIONS => collect($sets)->flatten(1)->values()->all(),
         };
+    }
+
+    /**
+     * Merge the presence data of one channel reported by every node.
+     *
+     * A user connected to two nodes shows up in both sets, so members are
+     * deduplicated by id before counting. The first node to report a member
+     * supplies its `user_info`; a member without one gets an empty object,
+     * which is what an empty JSON object decodes to after crossing the bus.
+     *
+     * @param  array<int, array<string|int, mixed>>  $sets
+     * @return array{presence: array{count: int, ids: array<int, mixed>, hash: array<array-key, mixed>}}
+     */
+    protected function mergePresenceData(array $sets): array
+    {
+        $ids = [];
+        $hash = [];
+
+        foreach ($sets as $set) {
+            $presence = is_array($set['presence'] ?? null) ? $set['presence'] : [];
+
+            foreach (is_array($presence['ids'] ?? null) ? $presence['ids'] : [] as $id) {
+                if (! in_array($id, $ids)) {
+                    $ids[] = $id;
+                }
+            }
+
+            foreach (is_array($presence['hash'] ?? null) ? $presence['hash'] : [] as $id => $info) {
+                $hash[$id] ??= ($info === [] || $info === null) ? (object) [] : $info;
+            }
+        }
+
+        return [
+            'presence' => [
+                'count' => count($ids),
+                'ids' => $ids,
+                'hash' => $hash,
+            ],
+        ];
     }
 
     /**
@@ -437,6 +480,52 @@ class MetricsHandler
             ->map(fn ($data) => ['id' => $data['user_id']])
             ->values()
             ->all();
+    }
+
+    /**
+     * Get this node's presence data for the given channel.
+     *
+     * @param  array<string, mixed>  $options
+     * @return array<string, mixed>
+     */
+    protected function presenceData(Application $application, array $options): array
+    {
+        $name = $options['channel'] ?? '';
+
+        return $this->channels->for($application)->find(is_string($name) ? $name : '')?->data() ?? [];
+    }
+
+    /**
+     * Get the connections one user holds on the given channel on this node.
+     *
+     * Each entry carries the socket id and when it joined, so the requesting
+     * node can tell which of the user's connections across the fleet came first.
+     *
+     * @param  array<string, mixed>  $options
+     * @return array<int, array{id: string, subscribed_at: float}>
+     */
+    protected function presenceConnections(Application $application, array $options): array
+    {
+        $name = $options['channel'] ?? '';
+        $userId = $options['user_id'] ?? null;
+
+        $channel = $this->channels->for($application)->find(is_string($name) ? $name : '');
+
+        if (! $channel || ! is_scalar($userId)) {
+            return [];
+        }
+
+        $connections = [];
+
+        foreach ($channel->connections() as $connection) {
+            $owner = $connection->data('user_id');
+
+            if (is_scalar($owner) && (string) $owner === (string) $userId) {
+                $connections[] = ['id' => $connection->id(), 'subscribed_at' => $connection->subscribedAt()];
+            }
+        }
+
+        return $connections;
     }
 
     /**

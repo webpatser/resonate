@@ -59,6 +59,14 @@ class EventDispatcher
 
             $payload['channel'] = $channel->name();
 
+            // Protocol events (member_added, member_removed) are delivered but
+            // never stored, so a cache channel keeps its last real payload.
+            if (is_string($payload['event'] ?? null) && str_starts_with($payload['event'], 'pusher_internal:')) {
+                $channel->broadcastInternally($payload, $connection);
+
+                continue;
+            }
+
             $channel->broadcast($payload, $connection);
         }
     }
