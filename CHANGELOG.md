@@ -2,6 +2,21 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## v0.7.1 - 2026-09-23
+
+### Fixed
+
+- A subscribe now holds back broadcasts to the joining connection from the moment it joins until `subscription_succeeded` and every plugin's `onSubscribe` have returned, then delivers them in arrival order. v0.7.0 could suspend after the join (a scaled presence channel asking the fleet, or a plugin waiting on I/O), so a live broadcast could reach a subscriber ahead of its confirmation or ahead of a replay plugin. Nothing is lost or reordered around a replay any more, whatever order the plugins are registered in and whether or not they suspend. The buffering is the new `Channel::hold()` and `Channel::release()`.
+- A presence join cancelled while the fleet was being asked still announces `member_added` when the user is present on this node or any other, so a connection elsewhere that deferred to it as the user's first no longer leaves the user unannounced.
+- An unsubscribe that overtakes its own subscribe no longer tells plugins about a subscription they never heard of, and the broadcasts held for it are dropped. This holds when the socket subscribes again before the first subscribe returns, whether the channel stayed alive or was emptied and recreated in between: a later unsubscribe reaches `onUnsubscribe` exactly once.
+- An unsubscribe arriving while a plugin's `onSubscribe` is suspended now waits for that pass to return, so every plugin hears the join before the leave (a roster no longer re-adds a member it just removed). A plugin that unsubscribes the connection from inside its own `onSubscribe` does not wait.
+- Two subscribes of one socket to one channel in flight at once share one buffer, both get `subscription_succeeded`, and a held broadcast arrives once, after both. A subscribe overtaken by an unsubscribe stays silent even when the socket has subscribed again since: the later subscribe confirms, so the socket gets one `subscription_succeeded` and plugins one `onSubscribe`.
+- The held-broadcast buffer is capped at `max_outbound_queue_size`; a subscriber that falls further behind while subscribing is terminated instead of growing the buffer without bound.
+
+### Documentation
+
+- Documented the plugin version policy: first-party plugins track Resonate's major.minor.
+
 ## v0.7.0 - 2026-09-23
 
 ### Parity

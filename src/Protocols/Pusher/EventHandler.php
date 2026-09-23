@@ -3,6 +3,9 @@
 namespace Webpatser\Resonate\Protocols\Pusher;
 
 use Exception;
+use Fiber;
+use Fledge\Async\DeferredFuture;
+use Fledge\Async\Future;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Throwable;
@@ -15,9 +18,19 @@ use Webpatser\Resonate\Protocols\Pusher\Concerns\InteractsWithChannelInformation
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\Exceptions\SubscriptionLimitExceeded;
 
+/**
+ * @phpstan-type SubscribeState array{calls: int, notifying: int, announced: bool, idle: ?DeferredFuture<null>, fibers: list<int>, epoch: int}
+ */
 class EventHandler
 {
     use InteractsWithChannelInformation;
+
+    /**
+     * The connection state key holding, per channel name, the subscribe calls
+     * in flight, the onSubscribe passes running, and whether the plugins
+     * have been told about the subscription.
+     */
+    public const SUBSCRIBING = 'resonate.subscribing';
 
     /**
      * Create a new Pusher event instance.
@@ -92,9 +105,29 @@ class EventHandler
             ->for($connection->app())
             ->findOrCreate($channel);
 
-        $channel->subscribe($connection, $auth, $data);
+        // A presence channel may wait on the fleet after the connection joins,
+        // and a plugin's onSubscribe may wait on I/O. Broadcasts landing in
+        // either window are held until subscription_succeeded and the whole
+        // onSubscribe pass are out, then delivered in arrival order.
+        $channel->hold($connection);
 
-        $this->afterSubscribe($channel, $connection);
+        $call = $this->beginSubscribe($connection, $channel);
+
+        try {
+            $channel->subscribe($connection, $auth, $data);
+
+            // Left while the subscribe was in flight, possibly subscribing
+            // again since: nothing for this call to confirm.
+            if (! $this->confirms($connection, $channel, $call)) {
+                return;
+            }
+
+            $this->afterSubscribe($channel, $connection, $call);
+        } finally {
+            $this->endSubscribe($connection, $channel);
+
+            $channel->release($connection);
+        }
     }
 
     /**
@@ -156,16 +189,30 @@ class EventHandler
     /**
      * Carry out any actions that should be performed after a subscription.
      */
-    protected function afterSubscribe(Channel $channel, Connection $connection): void
+    protected function afterSubscribe(Channel $channel, Connection $connection, ?int $call = null): void
     {
-        $this->sendInternally($connection, 'subscription_succeeded', $this->subscriptionData($channel, $connection), $channel->name());
+        $data = $this->subscriptionData($channel, $connection);
+
+        // The gather above may suspend: the connection may leave meanwhile,
+        // and a subscribe issued after that leave confirms on its own.
+        if (! $this->confirms($connection, $channel, $call)) {
+            return;
+        }
+
+        $this->sendInternally($connection, 'subscription_succeeded', $data, $channel->name());
 
         match (true) {
             $channel instanceof CacheChannel => $this->sendCachedPayload($channel, $connection),
             default => null,
         };
 
-        $this->plugins->notifySubscribe($connection, $channel);
+        $this->beginNotifying($connection, $channel);
+
+        try {
+            $this->plugins->notifySubscribe($connection, $channel);
+        } finally {
+            $this->endNotifying($connection, $channel);
+        }
     }
 
     /**
@@ -209,20 +256,229 @@ class EventHandler
 
     /**
      * Unsubscribe from the given channel.
+     *
+     * A connection that leaves before its subscribe reached the plugins was
+     * never announced to them, so they are not told it left either. One that
+     * leaves while a plugin's onSubscribe is still running waits for that
+     * pass to return, so every plugin hears the join before the leave. A
+     * plugin unsubscribing from inside its own onSubscribe does not wait.
      */
     public function unsubscribe(Connection $connection, string $channel): void
     {
-        $channel = $this->channels
-            ->for($connection->app())
-            ->find($channel);
+        $channels = $this->channels->for($connection->app());
 
-        if ($channel === null) {
+        while (($found = $channels->find($channel)) !== null
+            && ($idle = $this->notifyingElsewhere($connection, $found)) !== null) {
+            $idle->await();
+        }
+
+        if ($found === null) {
             return;
         }
 
-        $channel->unsubscribe($connection);
+        $entry = $this->subscribing($connection, $found);
 
-        $this->plugins->notifyUnsubscribe($connection, $channel);
+        $announced = $entry === null || $entry['calls'] === 0 || $entry['announced'];
+
+        $found->unsubscribe($connection);
+
+        // A subscribe still in flight belonged to the subscription that just
+        // ended; only a subscribe issued from here on may confirm.
+        if (($entry = $this->subscribing($connection, $found)) !== null) {
+            $entry['announced'] = false;
+            $entry['epoch']++;
+
+            $this->putSubscribing($connection, $found, $entry);
+        }
+
+        if ($announced) {
+            $this->plugins->notifyUnsubscribe($connection, $found);
+        }
+    }
+
+    /**
+     * Record a subscribe call to the channel and return its token.
+     *
+     * The token is the subscription epoch the call started in. An unsubscribe
+     * ends the epoch, so a call that started before it leaves the
+     * confirmation and the plugin announcement to a call that started after.
+     */
+    protected function beginSubscribe(Connection $connection, Channel $channel): int
+    {
+        $entry = $this->subscribing($connection, $channel) ?? [
+            'calls' => 0,
+            'notifying' => 0,
+            'announced' => $channel->subscribed($connection),
+            'idle' => null,
+            'fibers' => [],
+            'epoch' => 0,
+        ];
+
+        $entry['calls']++;
+
+        $this->putSubscribing($connection, $channel, $entry);
+
+        return $entry['epoch'];
+    }
+
+    /**
+     * Record that a subscribe call to the channel returned.
+     */
+    protected function endSubscribe(Connection $connection, Channel $channel): void
+    {
+        $entry = $this->subscribing($connection, $channel);
+
+        if ($entry === null) {
+            return;
+        }
+
+        $entry['calls']--;
+
+        $this->putSubscribing($connection, $channel, $entry);
+    }
+
+    /**
+     * Determine whether the subscribe call should confirm the subscription.
+     */
+    protected function confirms(Connection $connection, Channel $channel, ?int $call): bool
+    {
+        if (! $channel->subscribed($connection)) {
+            return false;
+        }
+
+        if ($call === null) {
+            return true;
+        }
+
+        $entry = $this->subscribing($connection, $channel);
+
+        return $entry === null || $entry['epoch'] === $call;
+    }
+
+    /**
+     * Record that the plugins are being told about the subscription.
+     */
+    protected function beginNotifying(Connection $connection, Channel $channel): void
+    {
+        $entry = $this->subscribing($connection, $channel) ?? [
+            'calls' => 0,
+            'notifying' => 0,
+            'announced' => false,
+            'idle' => null,
+            'fibers' => [],
+            'epoch' => 0,
+        ];
+
+        $entry['announced'] = true;
+        $entry['notifying']++;
+        $entry['fibers'][] = $this->fiberId();
+
+        $this->putSubscribing($connection, $channel, $entry);
+    }
+
+    /**
+     * Record that an onSubscribe pass returned, waking unsubscribes waiting on it.
+     */
+    protected function endNotifying(Connection $connection, Channel $channel): void
+    {
+        $entry = $this->subscribing($connection, $channel);
+
+        if ($entry === null) {
+            return;
+        }
+
+        $entry['notifying']--;
+
+        $index = array_search($this->fiberId(), $entry['fibers'], true);
+
+        if ($index !== false) {
+            unset($entry['fibers'][$index]);
+
+            $entry['fibers'] = array_values($entry['fibers']);
+        }
+
+        $idle = null;
+
+        if ($entry['notifying'] <= 0) {
+            [$idle, $entry['idle']] = [$entry['idle'], null];
+        }
+
+        $this->putSubscribing($connection, $channel, $entry);
+
+        $idle?->complete();
+    }
+
+    /**
+     * Get the future an unsubscribe waits on while another fiber runs the channel's onSubscribe pass.
+     *
+     * @return Future<null>|null
+     */
+    protected function notifyingElsewhere(Connection $connection, Channel $channel): ?Future
+    {
+        $entry = $this->subscribing($connection, $channel);
+
+        if ($entry === null
+            || $entry['notifying'] <= 0
+            || in_array($this->fiberId(), $entry['fibers'], true)) {
+            return null;
+        }
+
+        $entry['idle'] ??= new DeferredFuture;
+
+        $this->putSubscribing($connection, $channel, $entry);
+
+        return $entry['idle']->getFuture();
+    }
+
+    /**
+     * Get the in-flight subscribe state for the channel.
+     *
+     * @return SubscribeState|null
+     */
+    protected function subscribing(Connection $connection, Channel $channel): ?array
+    {
+        $subscribing = $connection->state(self::SUBSCRIBING, []);
+
+        if (! is_array($subscribing) || ! is_array($subscribing[$channel->name()] ?? null)) {
+            return null;
+        }
+
+        /** @var SubscribeState */
+        return $subscribing[$channel->name()];
+    }
+
+    /**
+     * Store the in-flight subscribe state for the channel, dropping it once nothing is in flight.
+     *
+     * @param  SubscribeState  $entry
+     */
+    protected function putSubscribing(Connection $connection, Channel $channel, array $entry): void
+    {
+        $subscribing = $connection->state(self::SUBSCRIBING, []);
+
+        if (! is_array($subscribing)) {
+            $subscribing = [];
+        }
+
+        if ($entry['calls'] <= 0 && $entry['notifying'] <= 0) {
+            unset($subscribing[$channel->name()]);
+        } else {
+            $subscribing[$channel->name()] = $entry;
+        }
+
+        $subscribing === []
+            ? $connection->forgetState(self::SUBSCRIBING)
+            : $connection->setState(self::SUBSCRIBING, $subscribing);
+    }
+
+    /**
+     * Get an identifier for the running fiber, 0 outside any fiber.
+     */
+    protected function fiberId(): int
+    {
+        $fiber = Fiber::getCurrent();
+
+        return $fiber === null ? 0 : spl_object_id($fiber);
     }
 
     /**

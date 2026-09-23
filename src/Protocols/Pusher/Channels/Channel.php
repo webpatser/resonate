@@ -8,6 +8,7 @@ use Webpatser\Resonate\Loggers\Log;
 use Webpatser\Resonate\Protocols\Pusher\Concerns\SerializesChannels;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelConnectionManager;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
+use Webpatser\Resonate\Server\RawConnection;
 
 class Channel
 {
@@ -19,6 +20,13 @@ class Channel
      * @var ChannelConnectionManager
      */
     protected $connections;
+
+    /**
+     * Broadcasts held back from connections still being subscribed, keyed by socket id.
+     *
+     * @var array<string, array{holds: int, frames: array<int, string>, overflowed: bool}>
+     */
+    protected array $held = [];
 
     /**
      * Create a new channel instance.
@@ -77,8 +85,64 @@ class Channel
     {
         $this->connections->remove($connection);
 
+        // Frames held for the old subscription are not owed to a subscribe
+        // of the same socket that is still in flight and shares the hold.
+        if (isset($this->held[$connection->id()])) {
+            $this->held[$connection->id()]['frames'] = [];
+        }
+
         if ($this->connections->isEmpty()) {
             app(ChannelManager::class)->for($connection->app())->remove($this);
+        }
+    }
+
+    /**
+     * Hold back broadcasts to the given connection until it is released.
+     *
+     * A subscription can suspend between the connection joining and its
+     * confirmation: a presence channel asks the fleet about its members, and
+     * a plugin's onSubscribe may wait on I/O. Broadcasts landing in that
+     * window are buffered in arrival order instead of overtaking
+     * `subscription_succeeded` or a plugin's replay. Holds nest, so two
+     * subscribes of one socket in flight at once share a single buffer.
+     *
+     * The buffer is bounded like the outbound queue it drains into: a
+     * connection that would outgrow it is terminated as soon as it does,
+     * rather than being dropped by its queue when the buffer is released.
+     */
+    public function hold(Connection $connection): void
+    {
+        $this->held[$connection->id()] ??= ['holds' => 0, 'frames' => [], 'overflowed' => false];
+
+        $this->held[$connection->id()]['holds']++;
+    }
+
+    /**
+     * Release a hold, delivering the buffered broadcasts once the last one ends.
+     *
+     * A connection that has left the channel in the meantime is owed nothing,
+     * so its buffer is dropped.
+     */
+    public function release(Connection $connection): void
+    {
+        $id = $connection->id();
+
+        if (! isset($this->held[$id]) || --$this->held[$id]['holds'] > 0) {
+            return;
+        }
+
+        ['frames' => $frames, 'overflowed' => $overflowed] = $this->held[$id];
+
+        unset($this->held[$id]);
+
+        $subscription = $this->connections->findById($id);
+
+        if ($subscription === null || $overflowed) {
+            return;
+        }
+
+        foreach ($frames as $frame) {
+            $this->sendTo($subscription, $frame);
         }
     }
 
@@ -145,10 +209,49 @@ class Channel
      */
     protected function sendTo(ChannelConnection $connection, string $message): void
     {
+        if ($this->held !== []) {
+            $id = $connection->id();
+
+            if (isset($this->held[$id])) {
+                $this->holdFrame($connection, $id, $message);
+
+                return;
+            }
+        }
+
         try {
             $connection->send($message);
         } catch (Throwable $e) {
             Log::error('Failed to send to '.$connection->id().': '.$e->getMessage());
+        }
+    }
+
+    /**
+     * Buffer a frame for a held connection, terminating it once the buffer is full.
+     */
+    protected function holdFrame(ChannelConnection $connection, string $id, string $message): void
+    {
+        if ($this->held[$id]['overflowed']) {
+            return;
+        }
+
+        $limit = (int) config('reverb.servers.reverb.max_outbound_queue_size', RawConnection::DEFAULT_MAX_QUEUE_SIZE);
+
+        if ($limit <= 0 || count($this->held[$id]['frames']) < $limit) {
+            $this->held[$id]['frames'][] = $message;
+
+            return;
+        }
+
+        $this->held[$id]['frames'] = [];
+        $this->held[$id]['overflowed'] = true;
+
+        Log::error('Connection '.$id.' fell behind after '.$limit.' broadcasts held while subscribing to '.$this->name().'; terminating it');
+
+        try {
+            $connection->terminate();
+        } catch (Throwable $e) {
+            Log::error('Failed to terminate '.$id.': '.$e->getMessage());
         }
     }
 

@@ -44,6 +44,10 @@ A few combinations earn their keep together:
 - **users + roster**: who is online as a person, and who is in which room. The roster answers the room question, this one answers the person question.
 - **delivery + anything**: reconnect-replay is independent and pairs with every other plugin.
 
+### Versioning
+
+The first-party plugins (`resonate-roster`, `resonate-webhooks`, `resonate-user-cap`, `resonate-token-auth`, `resonate-delivery`, `resonate-users`, `resonate-pulse`, `resonate-channel-meter`) track Resonate's `major.minor` version: plugin `0.7.x` is built for Resonate `0.7` and requires `^0.7`. Patch numbers move independently. Upgrade Resonate and its plugins together on every minor release.
+
 For full setup, config, security notes, and protocol details, follow the link to each package's README. The rest of this document is for building your own plugin.
 
 ## The contracts

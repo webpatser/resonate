@@ -42,7 +42,17 @@ trait InteractsWithPresenceChannels
 
         parent::subscribe($connection, $auth, $data);
 
-        if (! $this->isFirstConnectionOfUser($connection, $userData['user_id'] ?? null)) {
+        $first = $this->isFirstConnectionOfUser($connection, $userData['user_id'] ?? null);
+
+        // The connection left while the fleet was being asked. Another of the
+        // user's connections may have deferred to it as the first one and
+        // stayed silent, so announce the user if anyone is still present.
+        // Without scaling nothing was asked and nothing could have left.
+        if (! $this->presenceIsLocal() && $this->connections->find($connection) === null) {
+            $first = $this->userIsPresent($connection, $userData['user_id'] ?? null);
+        }
+
+        if (! $first) {
             return;
         }
 
@@ -134,6 +144,19 @@ trait InteractsWithPresenceChannels
         }
 
         return collect($this->connections->all())->map(fn ($connection) => (string) $connection->data('user_id'))->contains($userId);
+    }
+
+    /**
+     * Determine whether the given user still holds a connection here or on any other node.
+     */
+    protected function userIsPresent(Connection $connection, mixed $userId): bool
+    {
+        if (! is_scalar($userId) || (string) $userId === '') {
+            return false;
+        }
+
+        return $this->userIsSubscribed((string) $userId)
+            || ! $this->userHasLeftEveryNode($connection, $userId);
     }
 
     /**
