@@ -2,6 +2,12 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## v0.7.2 - 2026-09-23
+
+### Fixed
+
+- A plugin removing a connection with `PluginContext::unsubscribe()` while that connection's subscribe to a scaled presence channel was still in flight no longer lets the old subscribe confirm, so the client gets one `subscription_succeeded` and plugins one `onSubscribe`.
+
 ## v0.7.1 - 2026-09-23
 
 ### Fixed

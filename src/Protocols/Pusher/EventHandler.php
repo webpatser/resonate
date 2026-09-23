@@ -280,20 +280,43 @@ class EventHandler
 
         $announced = $entry === null || $entry['calls'] === 0 || $entry['announced'];
 
+        static::endSubscription($connection, $found);
+
         $found->unsubscribe($connection);
-
-        // A subscribe still in flight belonged to the subscription that just
-        // ended; only a subscribe issued from here on may confirm.
-        if (($entry = $this->subscribing($connection, $found)) !== null) {
-            $entry['announced'] = false;
-            $entry['epoch']++;
-
-            $this->putSubscribing($connection, $found, $entry);
-        }
 
         if ($announced) {
             $this->plugins->notifyUnsubscribe($connection, $found);
         }
+    }
+
+    /**
+     * End the connection's subscription epoch on the channel.
+     *
+     * A subscribe still in flight belongs to the subscription being ended;
+     * only a subscribe issued from here on may confirm. Called before the
+     * connection leaves the channel, by a client unsubscribe and by
+     * `PluginContext::unsubscribe()` alike: `Channel::unsubscribe()` may wait
+     * on the fleet, and a subscribe issued meanwhile must keep its epoch.
+     *
+     * @internal
+     */
+    public static function endSubscription(Connection $connection, Channel $channel): void
+    {
+        $subscribing = $connection->state(self::SUBSCRIBING, []);
+
+        if (! is_array($subscribing) || ! is_array($subscribing[$channel->name()] ?? null)) {
+            return;
+        }
+
+        /** @var SubscribeState $entry */
+        $entry = $subscribing[$channel->name()];
+
+        $entry['announced'] = false;
+        $entry['epoch']++;
+
+        $subscribing[$channel->name()] = $entry;
+
+        $connection->setState(self::SUBSCRIBING, $subscribing);
     }
 
     /**

@@ -613,3 +613,184 @@ it('terminates a joiner whose held broadcasts outgrow the outbound queue and flu
             roomFrame('live', 'four'),
         ]);
 });
+
+it('confirms only the resubscribe of a socket a plugin removed while its first subscribe was in flight', function (bool $keptAlive) {
+    $present = $keptAlive ? joinRoom(new FakeConnection, 2, 'Present') : null;
+
+    $recorder = lifecyclePlugin();
+
+    $joiner = new FakeConnection;
+    $gate = new DeferredFuture;
+    $waited = false;
+
+    // The first subscribe's question to the fleet stays out until the gate opens.
+    $this->fleet = function (Application $app, string $type) use ($gate, &$waited) {
+        if ($type === 'presence_connections' && ! $waited) {
+            $waited = true;
+
+            $gate->getFuture()->await();
+        }
+
+        return [];
+    };
+
+    $first = async(fn () => joinRoom($joiner, 1));
+
+    drainLoop();
+
+    // Held for the first subscribe, and owed to nobody once the plugin removed the socket.
+    broadcastToRoom('stale');
+
+    app(PluginContext::class)->unsubscribe($joiner, 'presence-room');
+
+    joinRoom($joiner, 1);
+
+    expect(confirmationsOf($joiner))->toHaveCount(1)
+        ->and($recorder->hooks)->toBe(['onSubscribe presence-room']);
+
+    broadcastToRoom('fresh');
+
+    $gate->complete();
+
+    $first->await();
+
+    $channel = channels()->find('presence-room');
+
+    expect($joiner->messages)->toBe([
+        internalFrame('subscription_succeeded', $channel->data()),
+        roomFrame('live', 'fresh'),
+    ])
+        ->and($recorder->hooks)->toBe(['onSubscribe presence-room'])
+        ->and($channel->subscribed($joiner))->toBeTrue()
+        ->and($joiner->hasState(EventHandler::SUBSCRIBING))->toBeFalse();
+
+    if ($present !== null) {
+        expect($present->messages)->toContain(roomFrame('live', 'stale'), roomFrame('live', 'fresh'));
+    }
+
+    $this->handler->handle($joiner, 'pusher:unsubscribe', ['channel' => 'presence-room']);
+
+    expect($recorder->hooks)->toBe([
+        'onSubscribe presence-room',
+        'onUnsubscribe presence-room',
+    ])
+        ->and(confirmationsOf($joiner))->toHaveCount(1)
+        ->and($joiner->hasState(EventHandler::SUBSCRIBING))->toBeFalse();
+})->with([
+    'channel kept alive by another member' => true,
+    'channel emptied and recreated' => false,
+]);
+
+it('drops a subscribe a plugin removed mid-flight without confirming it or telling the plugins', function () {
+    joinRoom(new FakeConnection, 2, 'Present');
+
+    $this->bus->published = [];
+
+    $recorder = lifecyclePlugin();
+
+    $joiner = new FakeConnection;
+    $gate = new DeferredFuture;
+    $waited = false;
+
+    $this->fleet = function (Application $app, string $type) use ($gate, &$waited) {
+        if ($type === 'presence_connections' && ! $waited) {
+            $waited = true;
+
+            $gate->getFuture()->await();
+        }
+
+        return [];
+    };
+
+    $join = async(fn () => joinRoom($joiner, 1));
+
+    drainLoop();
+
+    broadcastToRoom('during');
+
+    app(PluginContext::class)->unsubscribe($joiner, 'presence-room');
+
+    $gate->complete();
+
+    $join->await();
+
+    expect($joiner->messages)->toBe([])
+        ->and(confirmationsOf($joiner))->toBeEmpty()
+        ->and(channels()->find('presence-room')->subscribed($joiner))->toBeFalse()
+        ->and($joiner->hasState(EventHandler::SUBSCRIBING))->toBeFalse()
+        ->and($recorder->hooks)->toBe([])
+        ->and(busMemberEvents('member_added'))->toBeEmpty();
+});
+
+it('confirms a resubscribe issued while a plugin removal still waits on the fleet', function () {
+    $joiner = joinRoom(new FakeConnection, 1);
+    $joiner->messages = [];
+
+    $recorder = lifecyclePlugin();
+
+    $leaving = new DeferredFuture;
+    $joining = new DeferredFuture;
+    $asked = 0;
+
+    // The removal asks whether the user left every node, then the
+    // resubscribe asks whether it is the user's first connection.
+    $this->fleet = function (Application $app, string $type) use ($leaving, $joining, &$asked) {
+        if ($type === 'presence_connections') {
+            match (++$asked) {
+                1 => $leaving->getFuture()->await(),
+                2 => $joining->getFuture()->await(),
+                default => null,
+            };
+        }
+
+        return [];
+    };
+
+    $removal = async(fn () => app(PluginContext::class)->unsubscribe($joiner, 'presence-room'));
+
+    drainLoop();
+
+    $rejoin = async(fn () => joinRoom($joiner, 1));
+
+    drainLoop();
+
+    // The removal finishes while the resubscribe is still in flight.
+    $leaving->complete();
+
+    $removal->await();
+
+    $joining->complete();
+
+    $rejoin->await();
+
+    expect(confirmationsOf($joiner))->toHaveCount(1)
+        ->and($recorder->hooks)->toBe(['onSubscribe presence-room'])
+        ->and(channels()->find('presence-room')->subscribed($joiner))->toBeTrue()
+        ->and($joiner->hasState(EventHandler::SUBSCRIBING))->toBeFalse();
+});
+
+it('lets a plugin remove the connection through its context from inside its own onSubscribe', function () {
+    $plugin = lifecyclePlugin(function (Connection $connection, Channel $channel) {
+        // Held for the subscribe in flight, and owed to nobody once the socket is removed.
+        broadcastToRoom('held');
+
+        app(PluginContext::class)->unsubscribe($connection, $channel->name());
+    });
+
+    $joiner = new FakeConnection;
+
+    $join = async(fn () => joinRoom($joiner, 1));
+
+    drainLoop();
+
+    // The context never waits on the onSubscribe pass it is called from.
+    expect($join->isComplete())->toBeTrue();
+
+    $join->await();
+
+    expect($plugin->hooks)->toBe(['onSubscribe presence-room'])
+        ->and(confirmationsOf($joiner))->toHaveCount(1)
+        ->and($joiner->messages)->toHaveCount(1)
+        ->and(channels()->find('presence-room'))->toBeNull()
+        ->and($joiner->hasState(EventHandler::SUBSCRIBING))->toBeFalse();
+});

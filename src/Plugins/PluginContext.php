@@ -10,6 +10,7 @@ use Webpatser\Resonate\Exceptions\InvalidApplication;
 use Webpatser\Resonate\Protocols\Pusher\Channels\ChannelConnection;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\EventDispatcher;
+use Webpatser\Resonate\Protocols\Pusher\EventHandler;
 
 /**
  * The API surface handed to a {@see Contracts\ServerPlugin} at boot.
@@ -86,11 +87,20 @@ class PluginContext
      * socket open and the connection's other subscriptions intact. It does not
      * itself emit `onUnsubscribe` - that hook reports client-driven
      * `pusher:unsubscribe` events, mirroring how `onSubscribe` fires only from
-     * the protocol path.
+     * the protocol path. A subscribe of that connection to the channel still
+     * in flight no longer confirms; only one issued afterwards does.
      */
     public function unsubscribe(Connection $connection, string $channel): void
     {
-        $this->channels->for($connection->app())->find($channel)?->unsubscribe($connection);
+        $found = $this->channels->for($connection->app())->find($channel);
+
+        if ($found === null) {
+            return;
+        }
+
+        EventHandler::endSubscription($connection, $found);
+
+        $found->unsubscribe($connection);
     }
 
     /**
