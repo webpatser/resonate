@@ -2,6 +2,13 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## Unreleased
+
+### Parity
+
+- Reverb v1.12.0 reviewed against upstream `main` through `cb71efc6` (2026-09-28): only the Double v1 dev-dependency bump and a changelog commit, nothing to port.
+- Framework v13.34.0 touched no Resonate-coupled paths.
+
 ## v0.7.2 - 2026-09-23
 
 ### Fixed
