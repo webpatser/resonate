@@ -6,7 +6,7 @@ All notable changes to `webpatser/resonate` are documented here.
 
 ### Parity
 
-- Reverb v1.12.0 reviewed against upstream `main` through `cb71efc6` (2026-09-28): only the Double v1 dev-dependency bump and a changelog commit, nothing to port.
+- Reverb v1.12.0 reviewed against upstream `main` through `74c8c408` (2026-09-30): the Double v1 dev-dependency bump, PHPStan 2 support, the react/promise 3.x and guzzlehttp/psr7 3.x constraint changes, and a changelog commit. Resonate depends on neither ReactPHP nor Guzzle and already requires PHPStan 2, so nothing to port.
 - Framework v13.34.0 touched no Resonate-coupled paths.
 
 ## v0.7.2 - 2026-09-23
