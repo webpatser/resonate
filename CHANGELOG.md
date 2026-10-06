@@ -4,6 +4,10 @@ All notable changes to `webpatser/resonate` are documented here.
 
 ## Unreleased
 
+### Fixed
+
+- The Pulse message and connection cards now type their graph closures explicitly, so static analysis passes on PHPStan 2.3.0, which no longer inferred the nested message rate closures.
+
 ### Parity
 
 - Reverb v1.12.0 reviewed against upstream `main` through `74c8c408` (2026-09-30): the Double v1 dev-dependency bump, PHPStan 2 support, the react/promise 3.x and guzzlehttp/psr7 3.x constraint changes, and a changelog commit. Resonate depends on neither ReactPHP nor Guzzle and already requires PHPStan 2, so nothing to port.

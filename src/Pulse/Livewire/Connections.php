@@ -2,6 +2,7 @@
 
 namespace Webpatser\Resonate\Pulse\Livewire;
 
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Request;
 use Illuminate\Support\Facades\View;
@@ -34,13 +35,16 @@ class Connections extends Card
     #[Lazy]
     public function render()
     {
-        [$connections, $time, $runAt] = $this->remember(function () {
-            return with($this->graph(['reverb_connections'], 'max'), function ($max) {
-                return $this->graph(['reverb_connections'], 'avg')->map(fn ($readings, $app) => collect([
+        [$connections, $time, $runAt] = $this->remember(function (): Collection {
+            $max = $this->graph(['reverb_connections'], 'max');
+
+            return $this->graph(['reverb_connections'], 'avg')->map(
+                /** @param Collection<string, Collection<string, int|null>> $readings */
+                fn (Collection $readings, string $app): Collection => collect([
                     'reverb_connections:avg' => $readings['reverb_connections'],
                     'reverb_connections:max' => $max[$app]['reverb_connections'],
-                ]));
-            });
+                ])
+            );
         });
 
         if (Request::hasHeader('X-Livewire')) {

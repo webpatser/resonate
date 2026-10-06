@@ -2,6 +2,7 @@
 
 namespace Webpatser\Resonate\Pulse\Livewire;
 
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Request;
 use Illuminate\Support\Facades\View;
@@ -38,12 +39,11 @@ class Messages extends Card
     #[Lazy]
     public function render()
     {
-        [$all, $time, $runAt] = $this->remember(fn () => [
-            $readings = $this->graph(['reverb_message:sent', 'reverb_message:received'], 'count'),
-            $readings->map(fn ($byKey) => $byKey->map(
-                fn ($values) => $values->map(fn ($count) => $this->rate($count))
-            )),
-        ]);
+        [$all, $time, $runAt] = $this->remember(function (): array {
+            $readings = $this->graph(['reverb_message:sent', 'reverb_message:received'], 'count');
+
+            return [$readings, $this->rates($readings)];
+        });
 
         [$messages, $messagesRate] = $all;
 
@@ -58,6 +58,23 @@ class Messages extends Card
             'runAt' => $runAt,
             'config' => Config::get('pulse.recorders.'.ResonateMessages::class),
         ]);
+    }
+
+    /**
+     * Convert the message counts into rates per rate unit.
+     *
+     * @param  Collection<string, Collection<string, Collection<string, int|null>>>  $readings
+     * @return Collection<string, Collection<string, Collection<string, float|null>>>
+     */
+    protected function rates(Collection $readings): Collection
+    {
+        return $readings->map(
+            /** @param Collection<string, Collection<string, int|null>> $byKey */
+            fn (Collection $byKey): Collection => $byKey->map(
+                /** @param Collection<string, int|null> $values */
+                fn (Collection $values): Collection => $values->map(fn (?int $count): ?float => $this->rate($count))
+            )
+        );
     }
 
     /**
