@@ -5,6 +5,7 @@ namespace Webpatser\Resonate\Protocols\Pusher\Channels;
 use Throwable;
 use Webpatser\Resonate\Contracts\Connection;
 use Webpatser\Resonate\Loggers\Log;
+use Webpatser\Resonate\Loggers\Sanitizer;
 use Webpatser\Resonate\Protocols\Pusher\Concerns\SerializesChannels;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelConnectionManager;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
@@ -170,7 +171,7 @@ class Channel
         $message = (string) json_encode($payload);
 
         Log::info('Broadcasting To', $this->name());
-        Log::message($message);
+        Log::message(Sanitizer::outbound($payload, $message));
 
         foreach ($this->connections() as $connection) {
             if ($except->id() === $connection->id()) {
@@ -191,7 +192,7 @@ class Channel
         $message = (string) json_encode($payload);
 
         Log::info('Broadcasting To', $this->name());
-        Log::message($message);
+        Log::message(Sanitizer::outbound($payload, $message));
 
         foreach ($this->connections() as $connection) {
             $this->sendTo($connection, $message);

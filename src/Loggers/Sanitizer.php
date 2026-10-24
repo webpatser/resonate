@@ -34,4 +34,28 @@ class Sanitizer
 
         return $message;
     }
+
+    /**
+     * Build the log line for an outbound broadcast.
+     *
+     * Member-added frames and anything sent on a private or presence channel
+     * carry user identity and `user_info`, so only the event name and channel
+     * are logged for them. Other payloads are logged in full.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public static function outbound(array $payload, string $encoded): string
+    {
+        $event = $payload['event'] ?? null;
+        $channel = $payload['channel'] ?? null;
+
+        $sensitive = $event === 'pusher_internal:member_added'
+            || (is_string($channel) && (str_starts_with($channel, 'private-') || str_starts_with($channel, 'presence-')));
+
+        if (! $sensitive) {
+            return $encoded;
+        }
+
+        return (string) json_encode(['event' => $event, 'channel' => $channel]);
+    }
 }
