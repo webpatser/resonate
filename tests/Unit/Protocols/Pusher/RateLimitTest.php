@@ -122,6 +122,41 @@ it('keeps quotas separate for different client addresses', function () {
         ->and(wasRateLimited($second))->toBeFalse();
 });
 
+it('gives each client behind a trusted proxy its own quota', function () {
+    // Both sockets arrive from the proxy. Keyed on the TCP peer they shared one
+    // bucket, so a single client flooding junk frames got the other one
+    // rate limited too (and with terminate_on_limit, disconnected).
+    $this->server->open($flooder = (new FakeConnection(remoteAddress: '10.0.0.2'))->setClientAddress('203.0.113.10'));
+    $this->server->open($bystander = (new FakeConnection(remoteAddress: '10.0.0.2'))->setClientAddress('198.51.100.7'));
+
+    sendMessage($flooder, 'public-one');
+    sendMessage($flooder, 'public-two');
+    sendMessage($flooder, 'public-three');
+
+    sendMessage($bystander, 'public-four');
+
+    expect(wasRateLimited($flooder))->toBeTrue()
+        ->and(wasRateLimited($bystander))->toBeFalse()
+        ->and(limiterAttempts('resonate:message:app-id:client:203.0.113.10'))->toBe(2)
+        ->and(limiterAttempts('resonate:message:app-id:client:10.0.0.2'))->toBeNull();
+});
+
+it('keeps a client behind a trusted proxy on its quota across reconnects', function () {
+    $this->server->open($first = (new FakeConnection(remoteAddress: '10.0.0.2'))->setClientAddress('203.0.113.10'));
+
+    sendMessage($first, 'public-one');
+    sendMessage($first, 'public-two');
+
+    $this->server->close($first);
+
+    // Reconnected through a different proxy node, same client.
+    $this->server->open($second = (new FakeConnection(remoteAddress: '10.0.0.3'))->setClientAddress('203.0.113.10'));
+
+    sendMessage($second, 'public-three');
+
+    expect(wasRateLimited($second))->toBeTrue();
+});
+
 it('clears the connection limiter key on close', function () {
     $this->server->open($connection = new FakeConnection(remoteAddress: '203.0.113.10'));
 

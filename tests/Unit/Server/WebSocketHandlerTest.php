@@ -6,8 +6,12 @@ use League\Uri\Http;
 use Mockery;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
 use Webpatser\Resonate\Protocols\Pusher\Server;
+use Webpatser\Resonate\Server\RawConnection;
 use Webpatser\Resonate\Server\Router;
+use Webpatser\Resonate\Server\TrustedProxies;
+use Webpatser\Resonate\Server\WebSocketConnection;
 use Webpatser\Resonate\Server\WebSocketHandler;
+use Webpatser\Resonate\Tests\Fakes\FakeWebsocketClient;
 
 /*
  * Exercises WebSocketHandler::appKey() in isolation.
@@ -137,4 +141,85 @@ it('prefers the Router route attribute over the fallback regex when both would m
     $request = wsRequestWithRouteParams('/app/url-key', ['appKey' => 'attribute-key']);
 
     expect($this->handler->callAppKey($request))->toBe('attribute-key');
+});
+
+/*
+ * Exercises WebSocketHandler::attributeClientAddress(), which resolves the
+ * address the connection is rate limited as from the upgrade request.
+ */
+
+/**
+ * Build a handler whose client attribution can be driven directly.
+ */
+function attributingHandler(?TrustedProxies $proxies = null): WebSocketHandler
+{
+    return new class(app(Server::class), app(ApplicationProvider::class), RawConnection::DEFAULT_MAX_QUEUE_SIZE, $proxies) extends WebSocketHandler
+    {
+        public function callAttributeClientAddress(WebSocketConnection $connection, FledgeRequest $request): void
+        {
+            $this->attributeClientAddress($connection, $request);
+        }
+    };
+}
+
+/**
+ * Attribute a connection from the given TCP peer carrying the given X-Forwarded-For values.
+ *
+ * @param  list<string>  $forwardedFor
+ */
+function attributedConnection(WebSocketHandler $handler, string $peer, array $forwardedFor): WebSocketConnection
+{
+    $connection = new WebSocketConnection(
+        new RawConnection(new FakeWebsocketClient(1, $peer)),
+        app(ApplicationProvider::class)->findByKey('app-key'),
+        'http://localhost',
+    );
+
+    $request = new FledgeRequest(
+        Mockery::mock(Client::class),
+        'GET',
+        Http::new('http://localhost/app/app-key'),
+        $forwardedFor === [] ? [] : ['x-forwarded-for' => $forwardedFor],
+    );
+
+    $handler->callAttributeClientAddress($connection, $request);
+
+    return $connection;
+}
+
+it('attributes a connection through a trusted proxy to the forwarded client', function () {
+    $connection = attributedConnection(
+        attributingHandler(new TrustedProxies(['10.0.0.0/8'])),
+        '10.0.0.2',
+        ['192.0.2.1, 203.0.113.9, 10.0.0.5'],
+    );
+
+    expect($connection->remoteAddress())->toBe('10.0.0.2')
+        ->and($connection->clientAddress())->toBe('203.0.113.9');
+});
+
+it('ignores a spoofed X-Forwarded-For from an untrusted peer', function () {
+    $connection = attributedConnection(
+        attributingHandler(new TrustedProxies(['10.0.0.0/8'])),
+        '198.51.100.7',
+        ['203.0.113.9'],
+    );
+
+    expect($connection->clientAddress())->toBe('198.51.100.7');
+});
+
+it('attributes connections to their TCP peer when no proxy is trusted', function () {
+    $connection = attributedConnection(attributingHandler(new TrustedProxies), '10.0.0.2', ['203.0.113.9']);
+
+    expect($connection->clientAddress())->toBe('10.0.0.2');
+});
+
+it('reads the trusted proxies from servers.reverb.trusted_proxies', function () {
+    config(['reverb.servers.reverb.trusted_proxies' => ['10.0.0.0/8']]);
+
+    app()->forgetInstance(TrustedProxies::class);
+
+    $connection = attributedConnection(attributingHandler(), '10.0.0.2', ['203.0.113.9']);
+
+    expect($connection->clientAddress())->toBe('203.0.113.9');
 });

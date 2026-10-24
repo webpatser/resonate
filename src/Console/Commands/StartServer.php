@@ -26,6 +26,7 @@ use Webpatser\Resonate\Server\ApplicationClientFactory;
 use Webpatser\Resonate\Server\Factory as ServerFactory;
 use Webpatser\Resonate\Server\HttpServer;
 use Webpatser\Resonate\Server\RawConnection;
+use Webpatser\Resonate\Server\TrustedProxies;
 
 #[AsCommand(name: 'resonate:start')]
 class StartServer extends Command implements SignalableCommandInterface
@@ -168,6 +169,15 @@ class StartServer extends Command implements SignalableCommandInterface
             } catch (InvalidConfiguration $e) {
                 return $e->getMessage();
             }
+        }
+
+        // A malformed range would otherwise surface on the first upgrade, and a
+        // range that silently matched nothing would leave the proxy bucket
+        // shared without anyone noticing.
+        try {
+            TrustedProxies::fromConfig($this->configRepository()->get('reverb.servers.reverb.trusted_proxies'));
+        } catch (InvalidConfiguration $e) {
+            return $e->getMessage();
         }
 
         return null;

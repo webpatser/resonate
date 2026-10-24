@@ -55,3 +55,12 @@ it('refuses to start when enabled rate limiting has a zero decay_seconds', funct
     expect($exit)->not->toBe(0)
         ->and(Artisan::output())->toContain('decay_seconds');
 });
+
+it('refuses to start when a trusted proxy entry is not a CIDR range', function () {
+    $this->app['config']->set('reverb.servers.reverb.trusted_proxies', ['10.0.0.0/8', 'proxy.internal']);
+
+    $exit = Artisan::call('resonate:start');
+
+    expect($exit)->not->toBe(0)
+        ->and(Artisan::output())->toContain('trusted_proxies');
+});

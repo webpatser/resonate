@@ -77,10 +77,12 @@ Anything not in those two fields will still appear in the log; treat the log fil
 
 Counted in the in-memory `array` cache store, so the counter cannot be tampered with through a shared cache. Two dimensions are counted, each with the configured quota:
 
-- **client:** `resonate:message:{app_id}:client:{remote_address}`. Survives a reconnect, so a client that trips the limit cannot get a fresh quota by reconnecting (which `terminate_on_limit` actively invites). This entry is deliberately not released on close.
+- **client:** `resonate:message:{app_id}:client:{client_address}`. Survives a reconnect, so a client that trips the limit cannot get a fresh quota by reconnecting (which `terminate_on_limit` actively invites). This entry is deliberately not released on close.
 - **connection:** `resonate:message:{app_id}:connection:{socket_id}`. Released when the connection closes, so a process serving many short-lived connections does not accumulate limiter entries.
 
-The remote address is the TCP peer: behind a reverse proxy every connection reports the proxy's address, and the client dimension then applies to the proxy as a whole. Resonate does not read `X-Forwarded-For`. When the transport reports no address at all, only the connection dimension exists and a reconnect does start over.
+The client address is the TCP peer unless that peer is listed in `servers.reverb.trusted_proxies` (CIDR ranges or bare addresses, `REVERB_TRUSTED_PROXIES` comma-separated, empty by default). For a trusted peer the handshake walks `X-Forwarded-For` from the right and takes the first address that is not itself a trusted proxy; entries to the left of it were written by the client and are never read, and a malformed entry stops the walk at the last valid address. `X-Forwarded-For` from any other peer is ignored, so a client connecting directly cannot choose the bucket it is counted in. The RFC 7239 `Forwarded` header is not read.
+
+With no trusted proxies configured, every connection behind a reverse proxy reports the proxy's address and the client dimension applies to the proxy as a whole: one socket that exhausts the quota gets every client behind that proxy rate limited, and with `terminate_on_limit` disconnected. If you run behind a proxy and enable rate limiting, list the proxy. Only list addresses that cannot be reached by clients directly. When the transport reports no address at all, only the connection dimension exists and a reconnect does start over.
 
 When `enabled` is true, `max_attempts` and `decay_seconds` must each be a positive integer. Both are validated when the `Application` is built and again at server boot against the raw config, so `resonate:start` fails naming the offending key rather than starting a bricked application. A missing value used to be read as `null`, which rejected every message after the second one.
 

@@ -240,17 +240,18 @@ class Server
      *
      * Two dimensions are counted, both with the configured quota:
      *
-     * - the client (application plus remote address), which survives a
+     * - the client (application plus client address), which survives a
      *   reconnect. Keying on the socket id alone let a client that tripped the
      *   limit reset its quota by reconnecting, which `terminate_on_limit`
-     *   actively invites.
+     *   actively invites. Behind a trusted proxy the client address comes from
+     *   `X-Forwarded-For`, so the clients behind it no longer share one quota.
      * - the connection (application plus socket id), which is cleared on close
      *   so a process serving many short-lived connections does not accumulate
      *   limiter entries.
      *
-     * When the transport cannot report a remote address only the connection
+     * When the transport cannot report an address only the connection
      * dimension exists, and the reconnect reset comes back; see
-     * {@see Connection::remoteAddress()}.
+     * {@see Connection::clientAddress()}.
      *
      * @throws RateLimitExceeded
      */
@@ -304,7 +305,7 @@ class Server
 
         $keys = ['connection' => $prefix.':connection:'.$connection->id()];
 
-        if (($address = $connection->remoteAddress()) !== null && $address !== '') {
+        if (($address = $connection->clientAddress()) !== null && $address !== '') {
             $keys['client'] = $prefix.':client:'.$address;
         }
 

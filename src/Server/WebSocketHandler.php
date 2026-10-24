@@ -30,11 +30,13 @@ class WebSocketHandler implements WebsocketClientHandler
      * Create a new WebSocket handler instance.
      *
      * @param  int  $maxOutboundQueueSize  Frames one connection may queue before it is dropped.
+     * @param  TrustedProxies|null  $trustedProxies  Resolved from the container when omitted.
      */
     public function __construct(
         protected Server $server,
         protected ApplicationProvider $applications,
         protected int $maxOutboundQueueSize = RawConnection::DEFAULT_MAX_QUEUE_SIZE,
+        protected ?TrustedProxies $trustedProxies = null,
     ) {
         //
     }
@@ -66,6 +68,8 @@ class WebSocketHandler implements WebsocketClientHandler
             $request->getHeader('origin'),
         );
 
+        $this->attributeClientAddress($connection, $request);
+
         // A rejected connection has already been sent its error frame and
         // terminated. Entering the receive loop here would keep serving it.
         if (! $this->server->open($connection)) {
@@ -81,5 +85,26 @@ class WebSocketHandler implements WebsocketClientHandler
         } finally {
             $this->server->close($connection);
         }
+    }
+
+    /**
+     * Attribute the connection to its client when it arrived through a trusted proxy.
+     *
+     * Resolved once here, while the upgrade request and its headers are still
+     * at hand, rather than on every message. With no trusted proxies configured
+     * the header is never read and the connection keeps its TCP peer.
+     */
+    protected function attributeClientAddress(WebSocketConnection $connection, Request $request): void
+    {
+        $proxies = $this->trustedProxies ??= app(TrustedProxies::class);
+
+        if ($proxies->isEmpty()) {
+            return;
+        }
+
+        $connection->setClientAddress($proxies->clientAddress(
+            $connection->remoteAddress(),
+            $request->getHeaderArray('x-forwarded-for'),
+        ));
     }
 }

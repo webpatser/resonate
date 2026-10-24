@@ -47,6 +47,21 @@ return [
             'auth_timestamp_grace' => env('REVERB_AUTH_TIMESTAMP_GRACE', 600),
 
             /*
+            | Reverse proxies or load balancers (CIDR ranges or bare addresses)
+            | whose `X-Forwarded-For` header is believed. When a connection's
+            | TCP peer is in this list, the client it is rate limited as is the
+            | right-most `X-Forwarded-For` address that is not itself a trusted
+            | proxy. From any other peer the header is ignored, so a client
+            | cannot pick its own address. Empty by default: every connection
+            | is attributed to its TCP peer, and clients behind a proxy share
+            | the proxy's quota. Comma-separate entries in the env variable.
+            */
+            'trusted_proxies' => array_values(array_filter(array_map(
+                'trim',
+                explode(',', (string) env('REVERB_TRUSTED_PROXIES', '')),
+            ))),
+
+            /*
             | Resource limits on what a single connection may ask the server to
             | allocate. `max_channel_name_length` bounds the name a client can
             | subscribe to (Pusher itself caps names at 164 characters, so the

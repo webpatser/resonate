@@ -8,6 +8,10 @@ All notable changes to `webpatser/resonate` are documented here.
 
 - Channel names are now restricted to Pusher's charset (`A-Z a-z 0-9 _ - = @ , . ;`) on `pusher:subscribe`, `pusher:unsubscribe` and the REST channel and event endpoints, not just by length. Names with other characters (a colon, a slash, a space, a glob or key delimiter) are rejected with pusher code `4200` over the socket, `400` on the channel endpoints and `422` on the event endpoints. The `#server-to-user-` prefix used by `resonate-users` still passes. Applications that already use names outside the charset can set `servers.reverb.validate_channel_names` (`REVERB_VALIDATE_CHANNEL_NAMES`) to `false`.
 
+### Added
+
+- `servers.reverb.trusted_proxies` (`REVERB_TRUSTED_PROXIES`, empty by default): when a connection's TCP peer is a listed CIDR range, the message rate limiter's client dimension keys on the right-most untrusted `X-Forwarded-For` address instead of the proxy, so clients behind one proxy no longer share a quota. `X-Forwarded-For` from untrusted peers is ignored. New `Connection::clientAddress()` and `setClientAddress()`; `WebSocketHandler::__construct()` takes an optional fourth `?TrustedProxies` argument.
+
 ### Fixed
 
 - The Pulse message and connection cards now type their graph closures explicitly, so static analysis passes on PHPStan 2.3.0, which no longer inferred the nested message rate closures.

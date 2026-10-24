@@ -29,6 +29,7 @@ use Webpatser\Resonate\Scaling\PusherPubSubIncomingMessageHandler;
 use Webpatser\Resonate\Scaling\RedisPubSubProvider;
 use Webpatser\Resonate\Scaling\ResonateServerProvider;
 use Webpatser\Resonate\Scheduling\Scheduler;
+use Webpatser\Resonate\Server\TrustedProxies;
 
 class ResonateServiceProvider extends ServiceProvider
 {
@@ -60,6 +61,13 @@ class ResonateServiceProvider extends ServiceProvider
         $this->app->bind(ChannelConnectionManager::class, fn () => new ArrayChannelConnectionManager);
 
         $this->app->singleton(Scheduler::class);
+
+        // Read with a fallback: a host app's own `config/reverb.php` replaces the
+        // bundled `servers` block wholesale, so the key may simply be absent.
+        $this->app->singleton(
+            TrustedProxies::class,
+            fn () => TrustedProxies::fromConfig(config('reverb.servers.reverb.trusted_proxies', []))
+        );
 
         $this->registerPlugins();
 

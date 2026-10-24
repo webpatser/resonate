@@ -79,6 +79,14 @@ Defaults are set for a shared, multi-tenant process. Set any of these to `0` to 
 | `max_outbound_queue_size` | `REVERB_MAX_OUTBOUND_QUEUE_SIZE` | `1000` | Messages that may wait on one connection. Exceeding it closes the connection with WebSocket code `1013`. |
 | `scaling.max_queued_messages` | `REVERB_SCALING_MAX_QUEUED_MESSAGES` | `10000` | Inbound pub/sub envelopes waiting to be handled. Envelopes arriving while the queue is full are dropped and logged. |
 
+### Trusted proxies
+
+`servers.reverb.trusted_proxies` (`REVERB_TRUSTED_PROXIES`, comma-separated, empty by default) lists the reverse proxies or load balancers, as CIDR ranges or bare addresses, whose `X-Forwarded-For` header is believed. A connection whose TCP peer is in the list is rate limited as the right-most `X-Forwarded-For` address that is not itself a trusted proxy; from any other peer the header is ignored. Without it, every client behind a proxy shares the proxy's message rate-limit quota. An entry that is not an IP address or CIDR range makes `resonate:start` refuse to boot.
+
+```env
+REVERB_TRUSTED_PROXIES=10.0.0.0/8,fd00::/8
+```
+
 ### Outbound queues
 
 Every connection owns an outbound queue drained by a single writer fiber. `send()` queues and returns, so a client that stops reading its socket suspends only its own writer instead of stalling the channel fan-out and whatever issued the broadcast. One writer per connection keeps frames in the order they were queued.

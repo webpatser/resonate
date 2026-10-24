@@ -3,6 +3,7 @@
 namespace Webpatser\Resonate\Contracts;
 
 use Webpatser\Resonate\Application;
+use Webpatser\Resonate\Server\TrustedProxies;
 
 abstract class Connection
 {
@@ -46,6 +47,11 @@ abstract class Connection
      * @var array<string, mixed>
      */
     protected array $pluginState = [];
+
+    /**
+     * The client address resolved through a trusted proxy, if any.
+     */
+    protected ?string $clientAddress = null;
 
     /**
      * Create a new connection instance.
@@ -97,17 +103,49 @@ abstract class Connection
     }
 
     /**
-     * Get the remote address of the connected client, when the transport exposes one.
+     * Get the TCP peer address of the connection, when the transport exposes one.
      *
-     * This is the TCP peer address. Resonate does not read `X-Forwarded-For` or
-     * `Forwarded`, so behind a reverse proxy or load balancer every connection
-     * reports the proxy's address. Anything keyed on this (message rate
-     * limiting) then applies to the proxy as a whole, which is why the
-     * connection dimension is kept alongside it.
+     * Behind a reverse proxy or load balancer this is the proxy's address for
+     * every connection. Code that wants the client should read
+     * {@see clientAddress()} instead.
      */
     public function remoteAddress(): ?string
     {
         return null;
+    }
+
+    /**
+     * Get the address of the client this connection is attributed to.
+     *
+     * This is what message rate limiting keys its client dimension on. It is
+     * the TCP peer ({@see remoteAddress()}) unless that peer is listed in
+     * `servers.reverb.trusted_proxies`. Then the handshake resolved it from
+     * `X-Forwarded-For` as the right-most entry that is not itself a trusted
+     * proxy (see {@see TrustedProxies}).
+     *
+     * `X-Forwarded-For` from a peer that is not trusted is ignored, since any
+     * client can send it. The RFC 7239 `Forwarded` header is not read. With no
+     * trusted proxies configured (the default) every connection behind a proxy
+     * reports the proxy's address, and the client dimension then applies to
+     * the proxy as a whole, which is why the connection dimension is kept
+     * alongside it.
+     */
+    public function clientAddress(): ?string
+    {
+        return $this->clientAddress ?? $this->remoteAddress();
+    }
+
+    /**
+     * Attribute the connection to a client address other than its TCP peer.
+     *
+     * Set by the transport during the handshake. Passing null reverts to the
+     * TCP peer.
+     */
+    public function setClientAddress(?string $address): Connection
+    {
+        $this->clientAddress = $address === '' ? null : $address;
+
+        return $this;
     }
 
     /**

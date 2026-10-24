@@ -83,7 +83,7 @@ class FakeWebsocketClient implements \IteratorAggregate, WebsocketClient
     /**
      * Create a new fake websocket client.
      */
-    public function __construct(protected int $id = 1)
+    public function __construct(protected int $id = 1, protected string $remoteHost = '127.0.0.1')
     {
         //
     }
@@ -196,7 +196,7 @@ class FakeWebsocketClient implements \IteratorAggregate, WebsocketClient
 
     public function getRemoteAddress(): SocketAddress
     {
-        return new InternetAddress('127.0.0.1', 54321);
+        return new InternetAddress($this->remoteHost, 54321);
     }
 
     public function getTlsInfo(): ?TlsInfo
