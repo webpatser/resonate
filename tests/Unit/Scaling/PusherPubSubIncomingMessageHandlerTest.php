@@ -94,6 +94,30 @@ it('disconnects the matching user on a terminate envelope', function () {
     expect($other->wasTerminated)->toBeFalse();
 });
 
+it('ignores a terminate envelope without a usable user_id', function (mixed $payload) {
+    $anonymous = new FakeConnection;
+    $identified = new FakeConnection;
+
+    $channel = channels($this->application)->findOrCreate('test-channel');
+    $channel->subscribe($anonymous);
+    $channel->subscribe($identified, data: json_encode(['user_id' => 42]));
+
+    $this->handler->handle(json_encode([
+        'type' => 'terminate',
+        'application' => 'app-id',
+        'payload' => $payload,
+    ]));
+
+    expect($anonymous->wasTerminated)->toBeFalse();
+    expect($identified->wasTerminated)->toBeFalse();
+})->with([
+    'empty string' => [['user_id' => '']],
+    'null' => [['user_id' => null]],
+    'missing' => [[]],
+    'array' => [['user_id' => [42]]],
+    'no payload' => [null],
+]);
+
 it('decodes envelopes as pure JSON without unserialize', function () {
     // A serialized PHP object in the application field must never be revived.
     // The handler resolves the application from its plain id string, so a

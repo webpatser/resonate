@@ -65,16 +65,32 @@ class PusherPubSubIncomingMessageHandler implements PubSubIncomingMessageHandler
                     'application' => $application,
                     'payload' => $event['payload'],
                 ]),
-                'terminate' => collect(app(ChannelManager::class)->for($application)->connections())
-                    ->each(function ($connection) use ($event) {
-                        if ((string) $connection->data('user_id') === (string) $event['payload']['user_id']) {
-                            $connection->disconnect();
-                        }
-                    }),
+                'terminate' => $this->terminate($application, $event['payload'] ?? null),
                 default => null,
             };
         } catch (Throwable $e) {
             Log::error('Pub/sub envelope dropped: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * Disconnect every connection that belongs to the given user.
+     *
+     * A missing, empty or non-scalar `user_id` is ignored: an empty string
+     * would otherwise match every connection without a user (which casts to '').
+     */
+    protected function terminate(mixed $application, mixed $payload): void
+    {
+        $userId = is_array($payload) ? ($payload['user_id'] ?? null) : null;
+
+        if (! is_scalar($userId) || (string) $userId === '') {
+            return;
+        }
+
+        foreach (app(ChannelManager::class)->for($application)->connections() as $connection) {
+            if ((string) $connection->data('user_id') === (string) $userId) {
+                $connection->disconnect();
+            }
         }
     }
 
