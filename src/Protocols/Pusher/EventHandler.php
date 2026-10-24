@@ -133,13 +133,14 @@ class EventHandler
     /**
      * Get the validation rules for a subscribed channel name.
      *
-     * A configured length of 0 disables the check.
+     * A configured length of 0 disables the length check, and
+     * `validate_channel_names` set to false disables the charset check.
      *
-     * @return array<int, string>
+     * @return array<int, string|\Closure>
      */
     protected function channelNameRules(): array
     {
-        $rules = ['nullable', 'string'];
+        $rules = ['nullable', 'string', ChannelName::rule()];
 
         $length = (int) config('reverb.servers.reverb.max_channel_name_length', 255);
 
@@ -265,6 +266,10 @@ class EventHandler
      */
     public function unsubscribe(Connection $connection, string $channel): void
     {
+        Validator::make(['channel' => $channel], [
+            'channel' => $this->channelNameRules(),
+        ])->validate();
+
         $channels = $this->channels->for($connection->app());
 
         while (($found = $channels->find($channel)) !== null

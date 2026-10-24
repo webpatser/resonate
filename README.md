@@ -74,6 +74,7 @@ Defaults are set for a shared, multi-tenant process. Set any of these to `0` to 
 | Key (under `servers.reverb`) | Environment variable | Default | What it bounds |
 |------|----------------------|---------|----------------|
 | `max_channel_name_length` | `REVERB_MAX_CHANNEL_NAME_LENGTH` | `255` | Length of a channel name a client may subscribe to. Over-long names are rejected with pusher code `4200`. Pusher itself caps names at 164 characters. |
+| `validate_channel_names` | `REVERB_VALIDATE_CHANNEL_NAMES` | `true` | Restricts channel names to Pusher's charset `A-Z a-z 0-9 _ - = @ , . ;` (plus the `#server-to-user-` prefix) on subscribe, unsubscribe and the REST channel and event endpoints. Set to `false` to disable (a boolean, not a `0` limit). Violations get pusher code `4200` over the socket and HTTP `400`/`422` over REST. |
 | `max_subscriptions_per_connection` | `REVERB_MAX_SUBSCRIPTIONS_PER_CONNECTION` | `250` | Distinct channels one connection may hold. An over-cap subscribe is rejected with pusher code `4302`; the connection and its existing subscriptions stay intact. |
 | `max_outbound_queue_size` | `REVERB_MAX_OUTBOUND_QUEUE_SIZE` | `1000` | Messages that may wait on one connection. Exceeding it closes the connection with WebSocket code `1013`. |
 | `scaling.max_queued_messages` | `REVERB_SCALING_MAX_QUEUED_MESSAGES` | `10000` | Inbound pub/sub envelopes waiting to be handled. Envelopes arriving while the queue is full are dropped and logged. |

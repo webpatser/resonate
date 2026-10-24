@@ -4,6 +4,7 @@ namespace Webpatser\Resonate\Protocols\Pusher\Http\Controllers;
 
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Support\Facades\Validator as ValidatorFacade;
+use Webpatser\Resonate\Protocols\Pusher\ChannelName;
 use Webpatser\Resonate\Protocols\Pusher\EventDispatcher;
 use Webpatser\Resonate\Protocols\Pusher\MetricsHandler;
 use Webpatser\Resonate\Server\Request;
@@ -73,7 +74,7 @@ class EventsBatchController extends Controller
             'batch' => ['required', 'array'],
             'batch.*.name' => ['required', 'string'],
             'batch.*.data' => ['required', 'string'],
-            'batch.*.channel' => ['required_without:channels', 'string'],
+            'batch.*.channel' => ['required_without:channels', 'string', ChannelName::rule()],
             'batch.*.socket_id' => ['string'],
             'batch.*.info' => ['string'],
         ]);

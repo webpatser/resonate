@@ -5,6 +5,7 @@ namespace Webpatser\Resonate\Protocols\Pusher\Http\Controllers;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator as ValidatorFacade;
+use Webpatser\Resonate\Protocols\Pusher\ChannelName;
 use Webpatser\Resonate\Protocols\Pusher\EventDispatcher;
 use Webpatser\Resonate\Protocols\Pusher\MetricsHandler;
 use Webpatser\Resonate\Server\Request;
@@ -72,7 +73,8 @@ class EventsController extends Controller
             'name' => ['required', 'string'],
             'data' => ['required', 'string'],
             'channels' => ['required_without:channel', 'array'],
-            'channel' => ['required_without:channels', 'string'],
+            'channels.*' => ['string', ChannelName::rule()],
+            'channel' => ['required_without:channels', 'string', ChannelName::rule()],
             'socket_id' => ['string'],
             'info' => ['string'],
         ]);

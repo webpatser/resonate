@@ -2,6 +2,7 @@
 
 namespace Webpatser\Resonate\Protocols\Pusher\Http\Controllers;
 
+use Webpatser\Resonate\Protocols\Pusher\ChannelName;
 use Webpatser\Resonate\Protocols\Pusher\Concerns\InteractsWithChannelInformation;
 use Webpatser\Resonate\Protocols\Pusher\Http\Exceptions\HttpException;
 use Webpatser\Resonate\Protocols\Pusher\MetricsHandler;
@@ -21,7 +22,13 @@ class ChannelUsersController extends Controller
      */
     protected function handle(Request $request, array $parameters): Response
     {
-        $channel = $request->channels()->find($parameters['channel'] ?? '');
+        $name = $parameters['channel'] ?? '';
+
+        if (! ChannelName::isValid($name)) {
+            throw new HttpException(400, 'Invalid channel name.');
+        }
+
+        $channel = $request->channels()->find($name);
 
         if (! $channel) {
             throw new HttpException(404, 'Channel not found.');

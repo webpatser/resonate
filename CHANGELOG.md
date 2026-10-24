@@ -4,6 +4,10 @@ All notable changes to `webpatser/resonate` are documented here.
 
 ## Unreleased
 
+### Security
+
+- Channel names are now restricted to Pusher's charset (`A-Z a-z 0-9 _ - = @ , . ;`) on `pusher:subscribe`, `pusher:unsubscribe` and the REST channel and event endpoints, not just by length. Names with other characters (a colon, a slash, a space, a glob or key delimiter) are rejected with pusher code `4200` over the socket, `400` on the channel endpoints and `422` on the event endpoints. The `#server-to-user-` prefix used by `resonate-users` still passes. Applications that already use names outside the charset can set `servers.reverb.validate_channel_names` (`REVERB_VALIDATE_CHANNEL_NAMES`) to `false`.
+
 ### Fixed
 
 - The Pulse message and connection cards now type their graph closures explicitly, so static analysis passes on PHPStan 2.3.0, which no longer inferred the nested message rate closures.

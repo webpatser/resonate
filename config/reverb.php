@@ -59,6 +59,17 @@ return [
             'max_subscriptions_per_connection' => env('REVERB_MAX_SUBSCRIPTIONS_PER_CONNECTION', 250),
 
             /*
+            | Channel names are restricted to Pusher's charset
+            | (`A-Z a-z 0-9 _ - = @ , . ;`) on pusher:subscribe, pusher:unsubscribe
+            | and the REST channel and event endpoints; anything else is
+            | rejected like any other invalid input. The `#server-to-user-`
+            | prefix used for user channels is also accepted. Set to false to
+            | accept any name, for applications that already use names such as
+            | "orders:42".
+            */
+            'validate_channel_names' => env('REVERB_VALIDATE_CHANNEL_NAMES', true),
+
+            /*
             | Every connection has its own outbound queue drained by a single
             | writer fiber, so one client that stops reading no longer stalls a
             | channel broadcast. `max_outbound_queue_size` bounds how many

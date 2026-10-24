@@ -2,6 +2,8 @@
 
 namespace Webpatser\Resonate\Protocols\Pusher\Http\Controllers;
 
+use Webpatser\Resonate\Protocols\Pusher\ChannelName;
+use Webpatser\Resonate\Protocols\Pusher\Http\Exceptions\HttpException;
 use Webpatser\Resonate\Protocols\Pusher\MetricsHandler;
 use Webpatser\Resonate\Server\Request;
 use Webpatser\Resonate\Server\Response;
@@ -17,8 +19,14 @@ class ChannelController extends Controller
     {
         $query = $request->query();
 
+        $name = $parameters['channel'] ?? '';
+
+        if (! ChannelName::isValid($name)) {
+            throw new HttpException(400, 'Invalid channel name.');
+        }
+
         $channel = app(MetricsHandler::class)->gather($request->application(), 'channel', [
-            'channel' => $parameters['channel'] ?? '',
+            'channel' => $name,
             'info' => isset($query['info']) ? $query['info'].',occupied' : 'occupied',
         ]);
 

@@ -104,6 +104,8 @@ A connection whose app key resolves to no application is closed with pusher code
 
 `servers.reverb.max_channel_name_length` (default `255`) bounds the channel name a client may subscribe to; Pusher itself caps names at 164 characters, so the default leaves room while still bounding the allocation. An over-long name is rejected with pusher error code `4200` and the channel is never created.
 
+`servers.reverb.validate_channel_names` (default `true`) restricts channel names to Pusher's charset `A-Z a-z 0-9 _ - = @ , . ;` on subscribe, unsubscribe and the REST channel and event endpoints, so a name cannot carry a key delimiter or glob wildcard into a plugin's store keys. The `#server-to-user-` prefix used for user channels is also accepted. A rejected socket message gets pusher error code `4200`; REST requests get `400` (channel endpoints) or `422` (event endpoints).
+
 `servers.reverb.max_subscriptions_per_connection` (default `250`) bounds how many distinct channels one connection may hold. An over-cap subscribe is rejected with pusher error code `4302` (the 43xx range means "rejected, do not retry"; the connection stays open and its existing subscriptions keep working) and, again, the channel is never created. Re-subscribing to a channel the connection already holds is idempotent and never counts against the cap.
 
 Both checks run before `findOrCreate()`, which otherwise allocates a Channel for any name it is handed. Set either to `0` to disable.
