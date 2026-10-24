@@ -6,15 +6,12 @@ use Throwable;
 use Webpatser\Resonate\Contracts\Connection;
 use Webpatser\Resonate\Loggers\Log;
 use Webpatser\Resonate\Loggers\Sanitizer;
-use Webpatser\Resonate\Protocols\Pusher\Concerns\SerializesChannels;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelConnectionManager;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Server\RawConnection;
 
 class Channel
 {
-    use SerializesChannels;
-
     /**
      * The channel connections.
      *

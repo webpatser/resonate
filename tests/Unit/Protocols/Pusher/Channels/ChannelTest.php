@@ -87,3 +87,8 @@ it('does not broadcast to the connection sending the message', function () {
     collect($connections)->first()->assertNothingReceived();
     collect(array_slice($connections, -2))->each(fn ($connection) => $connection->assertReceived(['foo' => 'bar']));
 });
+
+it('has no unserialize hook that rebuilds connections from the container', function () {
+    expect(method_exists(Channel::class, '__unserialize'))->toBeFalse()
+        ->and(trait_exists('Webpatser\Resonate\Protocols\Pusher\Concerns\SerializesChannels'))->toBeFalse();
+});
