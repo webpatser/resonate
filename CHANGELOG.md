@@ -2,7 +2,7 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
-## Unreleased
+## v0.7.4 - 2026-10-24
 
 ### Security
 
