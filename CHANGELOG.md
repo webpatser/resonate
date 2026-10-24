@@ -14,6 +14,9 @@ All notable changes to `webpatser/resonate` are documented here.
 
 ### Fixed
 
+- A `terminate` pub/sub envelope with a missing, empty or non-scalar `user_id` is now ignored; an empty id used to disconnect every connection without a user.
+- Outbound broadcast logs now carry only the event name and channel for `pusher_internal:member_added` and for private and presence channels, so `user_info` and event bodies no longer reach the log.
+- Removed the unused `SerializesChannels` trait from `Channel`; its `__unserialize` rebuilt connections from the container and nothing called it.
 - The Pulse message and connection cards now type their graph closures explicitly, so static analysis passes on PHPStan 2.3.0, which no longer inferred the nested message rate closures.
 
 ### Parity
