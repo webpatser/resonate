@@ -46,7 +46,7 @@ A few combinations earn their keep together:
 
 ### Versioning
 
-The first-party plugins (`resonate-roster`, `resonate-webhooks`, `resonate-user-cap`, `resonate-token-auth`, `resonate-delivery`, `resonate-users`, `resonate-pulse`, `resonate-channel-meter`) track Resonate's `major.minor` version: plugin `0.7.x` is built for Resonate `0.7` and requires `^0.7`. Patch numbers move independently. Upgrade Resonate and its plugins together on every minor release.
+The first-party plugins (`resonate-roster`, `resonate-webhooks`, `resonate-user-cap`, `resonate-token-auth`, `resonate-delivery`, `resonate-users`, `resonate-pulse`, `resonate-channel-meter`) are versioned together with Resonate at 1.x and require `webpatser/resonate ^1.0`. Resonate 1.x follows semantic versioning, so the plugin contracts do not break within 1.x and a plugin built for `^1.0` keeps working on every 1.x release. Patch numbers move independently. Plugins released before 1.0 (`0.7.x`, requiring `^0.7`) need the 1.x release of the same plugin when you upgrade Resonate.
 
 For full setup, config, security notes, and protocol details, follow the link to each package's README. The rest of this document is for building your own plugin.
 
