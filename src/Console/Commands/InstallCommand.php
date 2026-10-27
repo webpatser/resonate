@@ -160,7 +160,7 @@ class InstallCommand extends Command
             return;
         }
 
-        if ($this->getApplication()->has('install:broadcasting')) {
+        if ($this->getApplication()?->has('install:broadcasting')) {
             $this->call('install:broadcasting', ['--no-interaction' => true]);
         }
     }

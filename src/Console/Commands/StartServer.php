@@ -88,7 +88,7 @@ class StartServer extends Command implements SignalableCommandInterface
         /** @var array<string, mixed> $config */
         $config = $this->configRepository()->get('reverb.servers.reverb');
 
-        $this->server = ServerFactory::make(
+        $server = $this->server = ServerFactory::make(
             $host = $this->option('host') ?: $config['host'],
             $port = $this->option('port') ?: $config['port'],
             $path = $this->option('path') ?: $config['path'] ?? '',
@@ -102,7 +102,7 @@ class StartServer extends Command implements SignalableCommandInterface
 
         $this->scheduler = app(Scheduler::class);
 
-        $this->ensureRestartCommandIsRespected($this->server, $host, $port);
+        $this->ensureRestartCommandIsRespected($server, $host, $port);
         $this->ensureMemoryIsReclaimed();
         $this->ensureHorizontalScalability();
         $this->ensurePluginsAreScheduled();
@@ -117,7 +117,7 @@ class StartServer extends Command implements SignalableCommandInterface
         // undiscoverable, and the next reload errored with "no running server
         // found" after unlinking it. `onListening` fires after the listening
         // sockets are bound and the accept loops are queued.
-        $this->server->onListening(fn () => $this->publishRuntimeState($host, (int) $port, $path));
+        $server->onListening(fn () => $this->publishRuntimeState($host, (int) $port, $path));
 
         // Belt and braces for the paths that bypass the finally below, such as
         // the Windows control handler or a fatal error mid-loop.
@@ -126,12 +126,23 @@ class StartServer extends Command implements SignalableCommandInterface
         $this->components->info("Starting server on {$host}:{$port}{$path}".(($hostname && $hostname !== $host) ? " ({$hostname})" : ''));
 
         try {
-            $this->server->start();
+            $server->start();
         } finally {
             $this->removePidFile();
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Get the scheduler for the server's periodic tasks.
+     *
+     * Bound in `handle()` before any task is scheduled; resolved lazily from
+     * the container as a fallback so the property is never read while null.
+     */
+    protected function scheduler(): Scheduler
+    {
+        return $this->scheduler ??= app(Scheduler::class);
     }
 
     /**
@@ -232,7 +243,7 @@ class StartServer extends Command implements SignalableCommandInterface
     {
         $lastRestart = Cache::get('laravel:reverb:restart');
 
-        $this->scheduler->repeat(5, function () use ($server, $host, $port, $lastRestart): void {
+        $this->scheduler()->repeat(5, function () use ($server, $host, $port, $lastRestart): void {
             if ($lastRestart === Cache::get('laravel:reverb:restart')) {
                 return;
             }
@@ -262,7 +273,7 @@ class StartServer extends Command implements SignalableCommandInterface
         $manager->boot();
 
         foreach ($manager->ticks() as $tick) {
-            $this->scheduler->repeat($tick['interval'], $tick['callback'], 'plugin:tick');
+            $this->scheduler()->repeat($tick['interval'], $tick['callback'], 'plugin:tick');
         }
     }
 
@@ -275,7 +286,7 @@ class StartServer extends Command implements SignalableCommandInterface
      */
     protected function ensureMemoryIsReclaimed(): void
     {
-        $this->scheduler->repeat(30, static fn () => gc_collect_cycles(), 'memory:gc');
+        $this->scheduler()->repeat(30, static fn () => gc_collect_cycles(), 'memory:gc');
     }
 
     /**
@@ -283,7 +294,7 @@ class StartServer extends Command implements SignalableCommandInterface
      */
     protected function ensureStaleConnectionsAreCleaned(): void
     {
-        $this->scheduler->repeat(60, static function (): void {
+        $this->scheduler()->repeat(60, static function (): void {
             PruneStaleConnections::dispatch();
             PingInactiveConnections::dispatch();
         }, 'connections:maintenance');
@@ -298,7 +309,7 @@ class StartServer extends Command implements SignalableCommandInterface
             return;
         }
 
-        $this->scheduler->repeat($interval, fn () => $this->laravel->make(Pulse::class)->ingest(), 'pulse:ingest');
+        $this->scheduler()->repeat($interval, fn () => $this->laravel->make(Pulse::class)->ingest(), 'pulse:ingest');
     }
 
     /**
@@ -314,7 +325,7 @@ class StartServer extends Command implements SignalableCommandInterface
             return;
         }
 
-        $this->scheduler->repeat(
+        $this->scheduler()->repeat(
             $interval,
             fn () => Telescope::store($this->laravel->make(EntriesRepository::class)),
             'telescope:ingest',

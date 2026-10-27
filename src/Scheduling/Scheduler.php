@@ -62,6 +62,9 @@ class Scheduler
     {
         $guard = $this->guard($name, $callback);
 
+        // Captured by reference: assigned the real callback id below, before the
+        // loop can invoke the closure.
+        $id = '';
         $id = EventLoop::repeat($interval, function () use (&$id, $guard, $name): void {
             if (isset($this->running[$id])) {
                 $this->logger->info(
@@ -107,6 +110,9 @@ class Scheduler
     {
         $guard = $this->guard($name, $callback);
 
+        // Captured by reference: assigned the real callback id below, before the
+        // loop can invoke the closure.
+        $id = '';
         $id = EventLoop::delay($delay, function () use (&$id, $guard): void {
             unset($this->tasks[$id]);
 

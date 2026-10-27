@@ -25,7 +25,7 @@ class ChannelController extends Controller
             throw new HttpException(400, 'Invalid channel name.');
         }
 
-        $channel = app(MetricsHandler::class)->gather($request->application(), 'channel', [
+        $channel = app(MetricsHandler::class)->gather($request->requireApplication(), 'channel', [
             'channel' => $name,
             'info' => isset($query['info']) ? $query['info'].',occupied' : 'occupied',
         ]);

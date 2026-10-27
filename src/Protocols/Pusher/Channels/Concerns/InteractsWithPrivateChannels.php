@@ -35,7 +35,7 @@ trait InteractsWithPrivateChannels
                 $signature,
                 $connection->app()->secret(),
             ),
-            Str::after($auth, ':')
+            Str::after($auth ?? '', ':')
         )) {
             throw new ConnectionUnauthorized;
         }

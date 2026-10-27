@@ -8,6 +8,7 @@ use Fledge\Async\Redis\RedisClient;
 use Fledge\Async\Redis\RedisConfig;
 use Fledge\Async\Redis\RedisSubscriber;
 use Fledge\Async\Redis\RedisSubscription;
+use RuntimeException;
 use Throwable;
 use Webpatser\Resonate\Concurrency\SerialQueue;
 use Webpatser\Resonate\Loggers\Log;
@@ -237,7 +238,9 @@ class RedisPubSubProvider implements PubSubProvider
      */
     protected function openSubscription(): RedisSubscription
     {
-        return $this->subscriber->subscribe($this->channel);
+        $subscriber = $this->subscriber ?? throw new RuntimeException('The pub/sub subscriber is not connected.');
+
+        return $subscriber->subscribe($this->channel);
     }
 
     /**

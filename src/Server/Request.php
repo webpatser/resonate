@@ -3,6 +3,7 @@
 namespace Webpatser\Resonate\Server;
 
 use Fledge\Async\Http\Server\Request as FledgeRequest;
+use LogicException;
 use Webpatser\Resonate\Application;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 
@@ -177,6 +178,19 @@ class Request
     }
 
     /**
+     * Get the application resolved for this request, failing when none was set.
+     *
+     * Controllers resolve the application during signature verification, before
+     * `handle()` runs, so a missing one is a programming error.
+     *
+     * @throws LogicException
+     */
+    public function requireApplication(): Application
+    {
+        return $this->application ?? throw new LogicException('No application has been resolved for this request.');
+    }
+
+    /**
      * Set the application resolved for this request.
      */
     public function setApplication(Application $application): void
@@ -190,6 +204,16 @@ class Request
     public function channels(): ?ChannelManager
     {
         return $this->channels;
+    }
+
+    /**
+     * Get the channel manager scoped to this request's application, failing when none was set.
+     *
+     * @throws LogicException
+     */
+    public function requireChannels(): ChannelManager
+    {
+        return $this->channels ?? throw new LogicException('No channel manager has been resolved for this request.');
     }
 
     /**

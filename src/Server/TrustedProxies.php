@@ -219,9 +219,9 @@ final class TrustedProxies
     {
         $proxy = trim($proxy);
 
-        [$address, $bits] = str_contains($proxy, '/')
-            ? explode('/', $proxy, 2)
-            : [$proxy, null];
+        $slash = strpos($proxy, '/');
+        $address = $slash === false ? $proxy : substr($proxy, 0, $slash);
+        $bits = $slash === false ? null : substr($proxy, $slash + 1);
 
         $packed = $this->pack($address);
 

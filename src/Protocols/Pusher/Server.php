@@ -265,7 +265,7 @@ class Server
         // and positive here. Reading `max_attempts` with no fallback used to
         // hand `null` to `tooManyAttempts()`, which rejected every connection
         // after its second message whenever the key was missing.
-        $config = $connection->app()->rateLimiting();
+        $config = $connection->app()->rateLimiting() ?? [];
         $maxAttempts = (int) $config['max_attempts'];
         $decaySeconds = (int) $config['decay_seconds'];
 

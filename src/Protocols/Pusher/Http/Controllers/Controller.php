@@ -104,7 +104,7 @@ abstract class Controller implements RequestHandler
      */
     protected function setChannels(Request $request): void
     {
-        $request->setChannels(app(ChannelManager::class)->for($request->application()));
+        $request->setChannels(app(ChannelManager::class)->for($request->requireApplication()));
     }
 
     /**
@@ -139,7 +139,7 @@ abstract class Controller implements RequestHandler
             $this->formatQueryParametersForVerification($params),
         ]);
 
-        $signature = hash_hmac('sha256', $signature, $request->application()->secret());
+        $signature = hash_hmac('sha256', $signature, $request->requireApplication()->secret());
         $authSignature = $query['auth_signature'] ?? '';
 
         if (! is_string($authSignature) || ! hash_equals($signature, $authSignature)) {

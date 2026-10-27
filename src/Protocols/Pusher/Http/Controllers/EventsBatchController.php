@@ -27,8 +27,8 @@ class EventsBatchController extends Controller
             return Response::json($validator->errors(), 422);
         }
 
-        $application = $request->application();
-        $channels = $request->channels();
+        $application = $request->requireApplication();
+        $channels = $request->requireChannels();
 
         /** @var array<int, array<string, mixed>> $batch */
         $batch = $payload['batch'];

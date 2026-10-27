@@ -33,11 +33,11 @@ class EventsController extends Controller
         $except = null;
 
         if ($socketId = $payload['socket_id'] ?? null) {
-            $except = $request->channels()->findConnection($socketId);
+            $except = $request->requireChannels()->findConnection($socketId);
         }
 
         EventDispatcher::dispatch(
-            $request->application(),
+            $request->requireApplication(),
             [
                 'event' => $payload['name'],
                 'channels' => $channels,
@@ -49,7 +49,7 @@ class EventsController extends Controller
 
         if (isset($payload['info'])) {
             $channels = app(MetricsHandler::class)->gather(
-                $request->application(),
+                $request->requireApplication(),
                 'channels',
                 ['info' => $payload['info'], 'channels' => $channels],
             );

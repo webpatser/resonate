@@ -15,7 +15,7 @@ class ConnectionsController extends Controller
      */
     protected function handle(Request $request, array $parameters): Response
     {
-        $connections = app(MetricsHandler::class)->gather($request->application(), 'connections');
+        $connections = app(MetricsHandler::class)->gather($request->requireApplication(), 'connections');
 
         return Response::json(['connections' => count($connections)]);
     }

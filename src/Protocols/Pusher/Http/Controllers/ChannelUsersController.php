@@ -28,7 +28,7 @@ class ChannelUsersController extends Controller
             throw new HttpException(400, 'Invalid channel name.');
         }
 
-        $channel = $request->channels()->find($name);
+        $channel = $request->requireChannels()->find($name);
 
         if (! $channel) {
             throw new HttpException(404, 'Channel not found.');
@@ -38,7 +38,7 @@ class ChannelUsersController extends Controller
             throw new HttpException(400, 'Users can only be retrieved for presence channels.');
         }
 
-        $users = app(MetricsHandler::class)->gather($request->application(), 'channel_users', [
+        $users = app(MetricsHandler::class)->gather($request->requireApplication(), 'channel_users', [
             'channel' => $channel->name(),
         ]);
 

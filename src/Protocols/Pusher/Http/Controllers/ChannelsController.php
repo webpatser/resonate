@@ -17,7 +17,7 @@ class ChannelsController extends Controller
     {
         $query = $request->query();
 
-        $channels = app(MetricsHandler::class)->gather($request->application(), 'channels', [
+        $channels = app(MetricsHandler::class)->gather($request->requireApplication(), 'channels', [
             'filter' => $query['filter_by_prefix'] ?? null,
             'info' => $query['info'] ?? null,
         ]);

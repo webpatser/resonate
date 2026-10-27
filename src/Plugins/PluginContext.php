@@ -143,8 +143,10 @@ class PluginContext
 
         $all = $provider->all();
 
-        if ($all->count() === 1) {
-            return $all->first();
+        $sole = $all->first();
+
+        if ($all->count() === 1 && $sole !== null) {
+            return $sole;
         }
 
         throw new InvalidApplication;

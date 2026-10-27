@@ -51,7 +51,9 @@ class Messages extends Card
             $this->dispatch('reverb-messages-chart-update', messages: $messages, messagesRate: $messagesRate);
         }
 
-        return View::make('reverb::livewire.messages', [
+        // The `reverb::` view namespace is only registered when Pulse is bound
+        // (see ResonateServiceProvider), which the analysis application is not.
+        return View::make('reverb::livewire.messages', [ // @phpstan-ignore argument.type
             'messages' => $messages,
             'messagesRate' => $messagesRate,
             'time' => $time,

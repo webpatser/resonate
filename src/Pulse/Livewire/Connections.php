@@ -42,7 +42,7 @@ class Connections extends Card
                 /** @param Collection<string, Collection<string, int|null>> $readings */
                 fn (Collection $readings, string $app): Collection => collect([
                     'reverb_connections:avg' => $readings['reverb_connections'],
-                    'reverb_connections:max' => $max[$app]['reverb_connections'],
+                    'reverb_connections:max' => $max[$app]['reverb_connections'] ?? null,
                 ])
             );
         });
@@ -51,7 +51,9 @@ class Connections extends Card
             $this->dispatch('reverb-connections-chart-update', connections: $connections);
         }
 
-        return View::make('reverb::livewire.connections', [
+        // The `reverb::` view namespace is only registered when Pulse is bound
+        // (see ResonateServiceProvider), which the analysis application is not.
+        return View::make('reverb::livewire.connections', [ // @phpstan-ignore argument.type
             'connections' => $connections,
             'time' => $time,
             'runAt' => $runAt,
