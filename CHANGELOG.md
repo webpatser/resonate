@@ -2,6 +2,23 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## v1.1.0 - 2026-10-27
+
+Static analysis moves to Larastan level 8. The changes are almost entirely type narrowing and null guards; no config keys, artisan commands, plugin contracts or Pusher wire behaviour change.
+
+### Added
+
+- `Request::requireApplication()` and `Request::requireChannels()` return the resolved application and channel manager, and throw a `LogicException` when none was set. The Pusher HTTP controllers use them in place of `application()` and `channels()`.
+
+### Changed
+
+- `RedisPubSubProvider` throws a `RuntimeException` ("The pub/sub subscriber is not connected.") when a subscription is opened before the subscriber exists, instead of a null method call error.
+- The Pulse connections card falls back to `null` when an app has no recorded `reverb_connections` maximum, instead of reading an undefined array key.
+- `Protocols\Pusher\Server` falls back to an empty rate limiting config when the application defines none, and `InteractsWithPrivateChannels` treats a missing `auth` value as an empty string.
+- `PluginContext` no longer returns a null application when the only registered application is null.
+- Type-only: `StartServer` resolves its scheduler through a new `scheduler()` accessor and a local server variable, `Scheduler` initialises its by-reference callback id, `TrustedProxies` parses CIDR strings with `strpos`/`substr`, `InstallCommand` null-guards `getApplication()`, and `phpstan.neon.dist` runs at level 8 with the Larastan extension.
+- Development only: `larastan/larastan ^3.10` is a new dev dependency, `composer analyse` passes `--memory-limit=1G` instead of `--no-progress`, and a new `testbench.yaml` excludes `webpatser/fledge-fiber` from package discovery during analysis.
+
 ## v1.0.0 - 2026-10-24
 
 First stable release. From here on 1.x follows semantic versioning: no breaking changes to the config keys, artisan commands, plugin contracts (`ServerPlugin`, `Plugins\Contracts\*`) or the Pusher wire behaviour within the 1.x line. There are no functional changes against v0.7.4.
