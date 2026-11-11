@@ -2,7 +2,7 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
-## Unreleased
+## v1.1.1 - 2026-11-11
 
 ### Parity
 
