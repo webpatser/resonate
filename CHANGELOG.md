@@ -2,6 +2,12 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## Unreleased
+
+### Parity
+
+- Reverb v1.13.0 reviewed against upstream main through 2026-11-11: #418 (client event membership check scoped to the connection's application) was already in place, since `ClientEvent::handle()` and `EventDispatcher` resolve channels through `ChannelManager::for($connection->app())`; new `ClientEventApplicationScopeTest` pins that a connection whose membership exists only under another application is rejected with `4009`, and that whispers stay inside the sender's application when two applications share a channel name. #419 (close connections rejected on open) was already in place: `Server::open()` terminates a connection refused for its origin or the `max_connections` quota after sending the error frame, covered by `OriginVerificationTest` and `ConnectionAdmissionTest`. #421 (unencodable pub/sub payloads) was already in place: `RedisPubSubProvider::publish()` encodes with `JSON_THROW_ON_ERROR`, and a handler failure on the receiving side is logged by the envelope queue without stopping the pump; new `RedisPubSubPublishTest` pins that `INF`, `NAN` and invalid UTF-8 throw `JsonException` and never reach Redis. No source changes and no `illuminate/*` floor change.
+
 ## v1.1.0 - 2026-10-27
 
 Static analysis moves to Larastan level 8. The changes are almost entirely type narrowing and null guards; no config keys, artisan commands, plugin contracts or Pusher wire behaviour change.
