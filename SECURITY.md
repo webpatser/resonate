@@ -94,6 +94,13 @@ Rate limits are **per server instance**, so in a horizontally scaled setup, a cl
 
 Open connections are tracked in `ChannelRegistry` by application and socket id rather than derived from channel membership, so a client that completes the handshake and never subscribes is still pinged, marked stale and pruned. Holding sockets open and staying silent is no longer a way to exhaust a node. A connection rejected by the origin allow-list or by `max_connections` is terminated rather than left usable, and only an admitted connection is counted against the limit.
 
+Below the application layer, the transport can cap open TCP connections before any Resonate code runs (WebSocket upgrades and HTTP API calls alike):
+
+- `servers.reverb.connection_limit` (`REVERB_CONNECTION_LIMIT`): total open connections per node.
+- `servers.reverb.connection_limit_per_ip` (`REVERB_CONNECTION_LIMIT_PER_IP`): open connections per TCP peer address. Loopback peers are exempt.
+
+Both are unlimited by default (null or 0). Earlier releases silently inherited the transport's built-in caps of 1000 in total and 10 per IP; behind a reverse proxy every client shares the proxy's address, so the 11th client was dropped with no log line. The per-IP cap keys on the TCP peer, not on `trusted_proxies`, so only set it on nodes that clients reach directly; behind a proxy, enforce per-client caps at the proxy and use `connection_limit` plus `max_connections` here. A connection over either cap is closed at accept time without a Pusher error. Invalid values (negative or non-integer) stop `resonate:start` before the port is bound.
+
 ### Message size
 
 `apps.apps[].max_message_size` (default `10_000` bytes) caps the size of any individual incoming WebSocket message. Set to `0` for unlimited.

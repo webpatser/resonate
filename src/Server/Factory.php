@@ -15,6 +15,7 @@ use Psr\Log\NullLogger;
 use Revolt\EventLoop;
 use Revolt\EventLoop\Driver;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
+use Webpatser\Resonate\Exceptions\InvalidConfiguration;
 use Webpatser\Resonate\Protocols\Pusher\Http\Controllers\ChannelController;
 use Webpatser\Resonate\Protocols\Pusher\Http\Controllers\ChannelsController;
 use Webpatser\Resonate\Protocols\Pusher\Http\Controllers\ChannelUsersController;
@@ -50,6 +51,8 @@ class Factory
         ?Driver $loop = null,
         int $fallbackMessageSize = 10_000,
         int $maxOutboundQueueSize = RawConnection::DEFAULT_MAX_QUEUE_SIZE,
+        ?int $connectionLimit = null,
+        ?int $connectionLimitPerIp = null,
     ): HttpServer {
         if ($loop !== null) {
             EventLoop::setDriver($loop);
@@ -57,16 +60,11 @@ class Factory
 
         $logger = self::logger();
 
-        // Enforce the configured `max_request_size` at the HTTP/1.1 + HTTP/2
-        // driver level so an oversized body is rejected before it ever reaches
-        // the controllers. Phase 5's audit caught this: the parameter used to
-        // be accepted but never wired through.
-        $socketServer = SocketHttpServer::createForDirectAccess(
-            logger: $logger,
-            httpDriverFactory: new DefaultHttpDriverFactory(
-                logger: $logger,
-                bodySizeLimit: $maxRequestSize,
-            ),
+        $socketServer = static::makeSocketServer(
+            $logger,
+            $maxRequestSize,
+            self::connectionLimit($connectionLimit, 'connection_limit'),
+            self::connectionLimit($connectionLimitPerIp, 'connection_limit_per_ip'),
         );
 
         $bindContext = self::configureTls($options['tls'] ?? [], $hostname) ?? new BindContext;
@@ -81,6 +79,68 @@ class Factory
         $router = self::makeRouter($path, $socketServer, $logger, $fallbackMessageSize, $maxOutboundQueueSize);
 
         return new HttpServer($socketServer, $router, new DefaultErrorHandler);
+    }
+
+    /**
+     * Build the fledge-fiber socket server with the transport limits applied.
+     *
+     * @param  positive-int  $connectionLimit
+     * @param  positive-int  $connectionLimitPerIp
+     */
+    protected static function makeSocketServer(
+        LoggerInterface $logger,
+        int $maxRequestSize,
+        int $connectionLimit,
+        int $connectionLimitPerIp,
+    ): SocketHttpServer {
+        // Enforce the configured `max_request_size` at the HTTP/1.1 + HTTP/2
+        // driver level so an oversized body is rejected before it ever reaches
+        // the controllers.
+        //
+        // The connection limits are passed explicitly: fledge-fiber defaults to
+        // 1000 connections in total and 10 per IP, and behind a reverse proxy
+        // every client shares the proxy's address, so the 11th client used to
+        // be dropped without a log line. Unlimited unless configured.
+        return SocketHttpServer::createForDirectAccess(
+            logger: $logger,
+            connectionLimit: $connectionLimit,
+            connectionLimitPerIp: $connectionLimitPerIp,
+            httpDriverFactory: new DefaultHttpDriverFactory(
+                logger: $logger,
+                bodySizeLimit: $maxRequestSize,
+            ),
+        );
+    }
+
+    /**
+     * Resolve a configured transport connection limit.
+     *
+     * Null, an empty string and 0 mean unlimited and map to PHP_INT_MAX (the
+     * transport requires a positive limit). Anything that is not a
+     * non-negative integer is rejected, so a typo fails at startup instead of
+     * silently capping the node.
+     *
+     * @return positive-int
+     *
+     * @throws InvalidConfiguration
+     */
+    public static function connectionLimit(mixed $value, string $key = 'connection_limit'): int
+    {
+        if ($value === null || $value === '') {
+            return PHP_INT_MAX;
+        }
+
+        $limit = is_int($value) ? $value : filter_var($value, FILTER_VALIDATE_INT);
+
+        if ($limit === false || $limit < 0) {
+            throw new InvalidConfiguration(sprintf(
+                'Invalid servers.reverb.%s value [%s]: expected a non-negative integer, or 0 or null for unlimited.',
+                $key,
+                is_scalar($value) ? (string) $value : get_debug_type($value),
+            ));
+        }
+
+        return $limit === 0 ? PHP_INT_MAX : $limit;
     }
 
     /**

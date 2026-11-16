@@ -14,3 +14,12 @@ The escape hatches added in the 0.7 line stay supported and are not deprecated:
 - `servers.reverb.trusted_proxies` (`REVERB_TRUSTED_PROXIES`): list your proxy CIDR ranges so the rate limiter keys on the real client address.
 
 The `fallbackMessageSize` fallback (`Factory`) and the `resonate:restart` command are unchanged.
+
+### Transport connection limits
+
+Earlier releases inherited fledge-fiber's hidden caps of 1000 connections per node and 10 per IP address, so behind a reverse proxy the 11th client was silently rejected. Both caps are now configurable and unlimited by default:
+
+- `servers.reverb.connection_limit` (`REVERB_CONNECTION_LIMIT`)
+- `servers.reverb.connection_limit_per_ip` (`REVERB_CONNECTION_LIMIT_PER_IP`)
+
+If you published `config/reverb.php`, add both keys under `servers.reverb` (null or 0 means unlimited). To keep the old behaviour on a directly exposed node, set them to 1000 and 10. `Factory::make()` takes them as two new trailing optional parameters, so existing callers are unaffected. See "Connection limits" in SECURITY.md.

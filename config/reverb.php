@@ -62,6 +62,19 @@ return [
             ))),
 
             /*
+            | Transport-level caps on open TCP connections, applied before any
+            | Resonate code runs (WebSocket upgrades and HTTP API calls alike).
+            | `connection_limit` bounds the node in total and
+            | `connection_limit_per_ip` bounds a single TCP peer address
+            | (loopback is exempt). Behind a reverse proxy every client shares
+            | the proxy's address, so a per-IP cap there limits the proxy, not
+            | the client. Null or 0 means unlimited, which is the default; a
+            | denied connection is closed without a Pusher error.
+            */
+            'connection_limit' => env('REVERB_CONNECTION_LIMIT'),
+            'connection_limit_per_ip' => env('REVERB_CONNECTION_LIMIT_PER_IP'),
+
+            /*
             | Resource limits on what a single connection may ask the server to
             | allocate. `max_channel_name_length` bounds the name a client can
             | subscribe to (Pusher itself caps names at 164 characters, so the

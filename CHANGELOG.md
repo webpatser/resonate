@@ -2,6 +2,16 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## Unreleased
+
+### Added
+
+- `connection_limit` and `connection_limit_per_ip` under `servers.reverb` (env `REVERB_CONNECTION_LIMIT`, `REVERB_CONNECTION_LIMIT_PER_IP`), unlimited by default.
+
+### Changed
+
+- The server no longer inherits the transport defaults of 1000 connections and 10 per IP, which silently dropped clients behind a proxy; see [UPGRADE.md](UPGRADE.md) to keep the old limits.
+
 ## v1.1.1 - 2026-11-11
 
 ### Parity

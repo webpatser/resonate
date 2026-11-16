@@ -98,6 +98,8 @@ class StartServer extends Command implements SignalableCommandInterface
             EventLoop::getDriver(),
             $this->fallbackMessageSize(),
             (int) ($config['max_outbound_queue_size'] ?? RawConnection::DEFAULT_MAX_QUEUE_SIZE),
+            ServerFactory::connectionLimit($config['connection_limit'] ?? null, 'connection_limit'),
+            ServerFactory::connectionLimit($config['connection_limit_per_ip'] ?? null, 'connection_limit_per_ip'),
         );
 
         $this->scheduler = app(Scheduler::class);
@@ -187,6 +189,12 @@ class StartServer extends Command implements SignalableCommandInterface
         // shared without anyone noticing.
         try {
             TrustedProxies::fromConfig($this->configRepository()->get('reverb.servers.reverb.trusted_proxies'));
+
+            // A malformed transport limit would otherwise either crash the
+            // bind or silently cap the node; fail before anything is exposed.
+            foreach (['connection_limit', 'connection_limit_per_ip'] as $key) {
+                ServerFactory::connectionLimit($this->configRepository()->get("reverb.servers.reverb.{$key}"), $key);
+            }
         } catch (InvalidConfiguration $e) {
             return $e->getMessage();
         }
