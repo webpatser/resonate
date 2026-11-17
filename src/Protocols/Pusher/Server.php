@@ -14,6 +14,7 @@ use Webpatser\Resonate\Plugins\MessageDisposition;
 use Webpatser\Resonate\Plugins\PluginManager;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\Exceptions\ConnectionLimitExceeded;
+use Webpatser\Resonate\Protocols\Pusher\Exceptions\ConnectionUnauthorized;
 use Webpatser\Resonate\Protocols\Pusher\Exceptions\InvalidOrigin;
 use Webpatser\Resonate\Protocols\Pusher\Exceptions\MessageSizeExceeded;
 use Webpatser\Resonate\Protocols\Pusher\Exceptions\PusherException;
@@ -125,6 +126,8 @@ class Server
 
             Validator::make($event, ['event' => ['required', 'string']])->validate();
 
+            $this->ensureNotUserChannelSubscribe($event);
+
             // Give the plugin layer first refusal on the message. A plugin that
             // owns a custom event type returns Handled/Rejected to consume it;
             // Relay (the default for non-plugin traffic) falls through to the
@@ -147,6 +150,39 @@ class Server
             }
         } catch (Throwable $e) {
             $this->error($from, $e);
+        }
+    }
+
+    /**
+     * Refuse a client frame subscribing to a `#server-to-user-` channel.
+     *
+     * The name carries no `private-` or `presence-` prefix, so the channel
+     * verifies no signature and would admit anyone who asks: any client could
+     * read another user's direct messages. Pusher refuses a client subscribe
+     * to the prefix too. Membership is granted server-side once the user is
+     * signed in, by a plugin handing the subscribe to {@see EventHandler}
+     * directly, which never passes through here.
+     *
+     * Checked ahead of the plugin interceptors, so it holds with no plugin
+     * installed, with channel name validation off, and for a plugin that
+     * re-dispatches a client's subscribe after its own checks.
+     *
+     * @param  array<string, mixed>  $event
+     *
+     * @throws ConnectionUnauthorized
+     */
+    protected function ensureNotUserChannelSubscribe(array $event): void
+    {
+        if ($event['event'] !== 'pusher:subscribe' || ! is_array($event['data'] ?? null)) {
+            return;
+        }
+
+        $channel = $event['data']['channel'] ?? null;
+
+        // A malformed user channel name is left to the validator, which
+        // refuses it with 4200 as it refuses any other malformed name.
+        if (is_string($channel) && ChannelName::isUserChannel($channel) && ChannelName::isValid($channel)) {
+            throw new ConnectionUnauthorized;
         }
     }
 

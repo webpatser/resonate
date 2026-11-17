@@ -17,7 +17,9 @@ use Closure;
  * The one exception is the `#server-to-user-` prefix `pusher/pusher-php-server`
  * addresses `sendToUser()` messages to, and `resonate-users` joins on signin.
  * The `#` is outside the charset, and the user id after it is whatever the
- * application signed in, so only control characters are refused there.
+ * application signed in, so only control characters are refused there. A
+ * valid name is not an admitted one: a client subscribe to it is refused in
+ * {@see Server::message()}, since membership comes from signin alone.
  */
 final class ChannelName
 {
@@ -54,6 +56,14 @@ final class ChannelName
         }
 
         return preg_match(self::PATTERN, $name) === 1;
+    }
+
+    /**
+     * Determine whether the name addresses a server-to-user channel.
+     */
+    public static function isUserChannel(string $name): bool
+    {
+        return str_starts_with($name, self::USER_CHANNEL_PREFIX);
     }
 
     /**

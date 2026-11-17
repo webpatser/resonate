@@ -11,6 +11,7 @@ use Illuminate\Support\Str;
 use Throwable;
 use Webpatser\Resonate\Contracts\Connection;
 use Webpatser\Resonate\Contracts\ServerProvider;
+use Webpatser\Resonate\Plugins\PluginContext;
 use Webpatser\Resonate\Plugins\PluginManager;
 use Webpatser\Resonate\Protocols\Pusher\Channels\CacheChannel;
 use Webpatser\Resonate\Protocols\Pusher\Channels\Channel;
@@ -85,9 +86,44 @@ class EventHandler
      * unchecked subscribe was an allocation primitive, and the eventual
      * disconnect then walked every channel it had created.
      *
+     * A client frame for a `#server-to-user-` channel never gets here: it is
+     * refused in {@see Server::message()}, ahead of the plugin interceptors.
+     * Only server-side callers reach this method with that prefix: a plugin
+     * that established the user's identity (released resonate-users calls
+     * `handle('pusher:subscribe')` directly) or {@see PluginContext::joinUserChannel()}.
+     *
      * @throws SubscriptionLimitExceeded
      */
     public function subscribe(Connection $connection, string $channel, ?string $auth = null, ?string $data = null): void
+    {
+        $this->validateSubscription($channel, $auth, $data);
+
+        $this->join($connection, $channel, $auth, $data);
+    }
+
+    /**
+     * Subscribe the connection on the server's own behalf.
+     *
+     * The same path as {@see subscribe()}: validation, the subscription cap,
+     * signature checks on private and presence channels, the plugin
+     * `onSubscribe` pass. Kept as the explicit server-side entry point, so a
+     * caller does not depend on where the client-frame refusal lives.
+     *
+     * @internal Used by {@see PluginContext::joinUserChannel()}.
+     *
+     * @throws SubscriptionLimitExceeded
+     */
+    public function subscribeInternally(Connection $connection, string $channel, ?string $auth = null, ?string $data = null): void
+    {
+        $this->validateSubscription($channel, $auth, $data);
+
+        $this->join($connection, $channel, $auth, $data);
+    }
+
+    /**
+     * Validate the fields of a subscribe.
+     */
+    protected function validateSubscription(string $channel, ?string $auth, ?string $data): void
     {
         Validator::make([
             'channel' => $channel,
@@ -98,12 +134,29 @@ class EventHandler
             'auth' => ['nullable', 'string'],
             'channel_data' => ['nullable', 'json'],
         ])->validate();
+    }
 
+    /**
+     * Join the connection to the channel once the name has been admitted.
+     *
+     * A subscribe that fails (a private or presence signature that does not
+     * verify, malformed presence data) removes the channel again when this
+     * call created it and nobody is in it. Otherwise every refused subscribe
+     * left an empty Channel registered under a name of the client's choosing,
+     * outside the subscription cap, which counts only channels the socket is
+     * actually in.
+     *
+     * @throws SubscriptionLimitExceeded
+     */
+    protected function join(Connection $connection, string $channel, ?string $auth, ?string $data): void
+    {
         $this->ensureWithinSubscriptionLimit($connection, $channel);
 
-        $channel = $this->channels
-            ->for($connection->app())
-            ->findOrCreate($channel);
+        $channels = $this->channels->for($connection->app());
+
+        $created = ! $channels->exists($channel);
+
+        $channel = $channels->findOrCreate($channel);
 
         // A presence channel may wait on the fleet after the connection joins,
         // and a plugin's onSubscribe may wait on I/O. Broadcasts landing in
@@ -115,7 +168,19 @@ class EventHandler
 
         try {
             $channel->subscribe($connection, $auth, $data);
+        } catch (Throwable $e) {
+            $this->endSubscribe($connection, $channel);
 
+            $channel->release($connection);
+
+            if ($created) {
+                $this->forgetIfAbandoned($channels, $channel);
+            }
+
+            throw $e;
+        }
+
+        try {
             // Left while the subscribe was in flight, possibly subscribing
             // again since: nothing for this call to confirm.
             if (! $this->confirms($connection, $channel, $call)) {
@@ -128,6 +193,22 @@ class EventHandler
 
             $channel->release($connection);
         }
+    }
+
+    /**
+     * Remove a channel a failed subscribe created, if it is still empty and still registered.
+     *
+     * Another connection may have joined while the subscribe was suspended,
+     * or the channel may already have been removed and replaced, so only the
+     * same, empty instance is removed.
+     */
+    protected function forgetIfAbandoned(ChannelManager $channels, Channel $channel): void
+    {
+        if ($channel->connections() !== [] || $channels->find($channel->name()) !== $channel) {
+            return;
+        }
+
+        $channels->remove($channel);
     }
 
     /**

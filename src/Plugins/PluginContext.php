@@ -7,6 +7,7 @@ use Webpatser\Resonate\Application;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
 use Webpatser\Resonate\Contracts\Connection;
 use Webpatser\Resonate\Exceptions\InvalidApplication;
+use Webpatser\Resonate\Protocols\Pusher\ChannelName;
 use Webpatser\Resonate\Protocols\Pusher\Channels\ChannelConnection;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\EventDispatcher;
@@ -101,6 +102,31 @@ class PluginContext
         EventHandler::endSubscription($connection, $found);
 
         $found->unsubscribe($connection);
+    }
+
+    /**
+     * Subscribe a connection to the `#server-to-user-{id}` channel of the given user.
+     *
+     * Core refuses a client subscribe to that prefix, so the plugin that
+     * establishes a connection's identity (resonate-users, on a verified
+     * `pusher:signin`) joins it here. The subscribe runs the standard path, so
+     * the subscription cap applies and every plugin sees the usual
+     * `onSubscribe`. `channel_data` names the user, which is what
+     * `terminate_connections` matches on.
+     *
+     * The caller vouches for the identity: never pass a user id the client
+     * has not proven.
+     *
+     * @throws \Throwable When the subscribe is refused, for example at the subscription cap.
+     */
+    public function joinUserChannel(Connection $connection, string $userId): void
+    {
+        app(EventHandler::class)->subscribeInternally(
+            $connection,
+            ChannelName::USER_CHANNEL_PREFIX.$userId,
+            null,
+            json_encode(['user_id' => $userId], JSON_THROW_ON_ERROR),
+        );
     }
 
     /**

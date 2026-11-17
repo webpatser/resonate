@@ -1,5 +1,9 @@
 <?php
 
+use Illuminate\Support\Facades\Event;
+use Webpatser\Resonate\Events\ChannelCreated;
+use Webpatser\Resonate\Events\ChannelRemoved;
+use Webpatser\Resonate\Protocols\Pusher\Channels\Channel;
 use Webpatser\Resonate\Protocols\Pusher\Server;
 use Webpatser\Resonate\Tests\Fakes\FakeConnection;
 
@@ -116,6 +120,116 @@ it('accepts a channel name at the configured maximum', function () {
 
     expect(receivedError($connection, 'Invalid message format'))->toBeFalse()
         ->and(channels()->find($name))->not->toBeNull();
+});
+
+it('does not leave a channel behind when a private subscribe fails its signature', function () {
+    $this->server->open($connection = new FakeConnection);
+
+    subscribeTo($connection, 'private-orders');
+
+    // Each refused subscribe used to leave an empty Channel registered under a
+    // name of the client's choosing, outside the cap, which only counts the
+    // channels the socket is actually in.
+    expect(receivedError($connection, 'Connection is unauthorized'))->toBeTrue()
+        ->and(channels()->find('private-orders'))->toBeNull();
+});
+
+it('does not leave a channel behind when a presence subscribe fails its signature', function () {
+    $this->server->open($connection = new FakeConnection);
+
+    $this->server->message($connection, json_encode([
+        'event' => 'pusher:subscribe',
+        'data' => [
+            'channel' => 'presence-room',
+            'auth' => 'app-key:deadbeef',
+            'channel_data' => json_encode(['user_id' => '1']),
+        ],
+    ]));
+
+    expect(receivedError($connection, 'Connection is unauthorized'))->toBeTrue()
+        ->and(channels()->find('presence-room'))->toBeNull();
+});
+
+it('does not let failed subscribes accumulate channels past the cap', function () {
+    $this->app['config']->set('reverb.servers.reverb.max_subscriptions_per_connection', 2);
+
+    $this->server->open($connection = new FakeConnection);
+
+    for ($i = 0; $i < 10; $i++) {
+        subscribeTo($connection, 'private-flood-'.$i);
+    }
+
+    expect(channels()->all())->toBe([]);
+});
+
+it('keeps an existing channel when a further subscribe to it fails', function () {
+    $this->server->open($member = new FakeConnection);
+    $this->server->open($intruder = new FakeConnection);
+
+    $this->server->message($member, json_encode([
+        'event' => 'pusher:subscribe',
+        'data' => ['channel' => 'private-orders', 'auth' => validAuth($member->id(), 'private-orders')],
+    ]));
+
+    subscribeTo($intruder, 'private-orders');
+
+    expect(receivedError($intruder, 'Connection is unauthorized'))->toBeTrue()
+        ->and(channels()->find('private-orders')?->findById($member->id()))->not->toBeNull();
+});
+
+it('keeps a channel a failed subscribe created when another connection joined it meanwhile', function () {
+    $this->server->open($intruder = new FakeConnection);
+    $member = new FakeConnection;
+
+    // ChannelCreated is dispatched inside findOrCreate(), after the channel is
+    // registered and before the failing subscribe verifies: the window in
+    // which another connection can join the channel this call created.
+    Event::listen(ChannelCreated::class, function (ChannelCreated $event) use ($member) {
+        $event->channel->subscribe($member, validAuth($member->id(), 'private-orders'));
+    });
+
+    subscribeTo($intruder, 'private-orders');
+
+    expect(receivedError($intruder, 'Connection is unauthorized'))->toBeTrue()
+        ->and(channels()->find('private-orders')?->findById($member->id()))->not->toBeNull();
+});
+
+it('keeps a channel that was removed and recreated while a failed subscribe was in flight', function () {
+    $this->server->open($intruder = new FakeConnection);
+    $replacement = null;
+
+    Event::listen(ChannelCreated::class, function (ChannelCreated $event) use (&$replacement) {
+        if ($replacement !== null) {
+            return;
+        }
+
+        $replacement = false;
+
+        channels()->remove($event->channel);
+
+        $replacement = channels()->findOrCreate('private-orders');
+    });
+
+    subscribeTo($intruder, 'private-orders');
+
+    expect(receivedError($intruder, 'Connection is unauthorized'))->toBeTrue()
+        ->and($replacement)->toBeInstanceOf(Channel::class)
+        ->and(channels()->find('private-orders'))->toBe($replacement);
+});
+
+it('dispatches ChannelRemoved exactly once when a failed subscribe cleans up', function () {
+    $this->server->open($connection = new FakeConnection);
+    $removed = [];
+
+    Event::listen(ChannelRemoved::class, function (ChannelRemoved $event) use (&$removed) {
+        $removed[] = $event->channel->name();
+    });
+
+    subscribeTo($connection, 'private-orders');
+
+    expect(receivedError($connection, 'Connection is unauthorized'))->toBeTrue()
+        ->and($removed)->toBe(['private-orders'])
+        ->and(channels()->find('private-orders'))->toBeNull();
 });
 
 it('treats a channel name length of 0 as unlimited', function () {
