@@ -22,6 +22,11 @@ use Fledge\Async\Http\Server\SocketHttpServer;
 class Router implements RequestHandler
 {
     /**
+     * The request attribute that carries the path prefix a request was routed with.
+     */
+    public const string PREFIX_ATTRIBUTE = self::class.'::prefix';
+
+    /**
      * The registered routes.
      *
      * @var array<int, Route>
@@ -129,6 +134,10 @@ class Router implements RequestHandler
         // Expose the matched route parameters to the handler the same way
         // fledge-fiber's own router does, keyed by this class.
         $request->setAttribute(self::class, $parameters);
+
+        // The prefix can come from `--path` as well as from config, so the
+        // signature check reads the one this request actually matched with.
+        $request->setAttribute(self::PREFIX_ATTRIBUTE, $this->prefix);
 
         return $route->handler()->handleRequest($request);
     }

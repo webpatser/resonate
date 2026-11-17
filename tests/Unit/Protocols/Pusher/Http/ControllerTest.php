@@ -459,6 +459,71 @@ it('rejects a signed key containing a separator', function () {
 });
 
 /*
+ * Path prefix.
+ *
+ * Pusher clients sign the API path without the server's path prefix. The
+ * prefix to strip is the one the router matched with, which `--path` can set
+ * independently of config('reverb.servers.reverb.path').
+ */
+
+/**
+ * Route a request for $path (signed without the prefix) through a real router.
+ */
+function routedStatus(string $prefix, string $signedPath, string $requestPath): int
+{
+    $router = new Router($prefix);
+    $router->get('/apps/{appId}/channels', testController());
+
+    $query = signedQuery('GET', $signedPath, [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => (string) time(),
+        'auth_version' => '1.0',
+    ]);
+
+    return $router->handleRequest(new FledgeRequest(
+        Mockery::mock(Client::class),
+        'GET',
+        Http::new('http://localhost'.$requestPath.'?'.$query),
+    ))->getStatus();
+}
+
+it('strips the router prefix set by --path when no path is configured', function () {
+    config()->set('reverb.servers.reverb.path', '');
+
+    expect(routedStatus('ws', '/apps/app-id/channels', '/ws/apps/app-id/channels'))->toBe(200);
+});
+
+it('strips the router prefix rather than a different configured path', function () {
+    config()->set('reverb.servers.reverb.path', 'configured');
+
+    expect(routedStatus('/ws/', '/apps/app-id/channels', '/ws/apps/app-id/channels'))->toBe(200);
+});
+
+it('still rejects a prefixed request signed for a different path', function () {
+    config()->set('reverb.servers.reverb.path', '');
+
+    expect(routedStatus('ws', '/apps/app-id/events', '/ws/apps/app-id/channels'))->toBe(401);
+});
+
+it('does not accept a signature over the prefixed path', function () {
+    config()->set('reverb.servers.reverb.path', '');
+
+    expect(routedStatus('ws', '/ws/apps/app-id/channels', '/ws/apps/app-id/channels'))->toBe(401);
+});
+
+it('falls back to the configured path when no router prefix is known', function () {
+    config()->set('reverb.servers.reverb.path', 'ws');
+
+    $query = signedQuery('GET', '/apps/app-id/channels', [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => (string) time(),
+        'auth_version' => '1.0',
+    ]);
+
+    expect(statusFor('GET', '/ws/apps/app-id/channels', $query))->toBe(200);
+});
+
+/*
  * Body binding.
  */
 

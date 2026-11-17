@@ -127,11 +127,7 @@ abstract class Controller implements RequestHandler
 
         ksort($params);
 
-        $path = $request->getPath();
-
-        if ($prefix = config('reverb.servers.reverb.path')) {
-            $path = '/'.ltrim(Str::after($path, rtrim($prefix, '/')), '/');
-        }
+        $path = $this->pathForVerification($request);
 
         $signature = implode("\n", [
             $request->getMethod(),
@@ -147,6 +143,36 @@ abstract class Controller implements RequestHandler
         }
 
         $this->verifyTimestamp($request);
+    }
+
+    /**
+     * Get the request path as the client signed it: without the server's path prefix.
+     *
+     * The prefix is the one the {@see Router} matched the request with, which
+     * `resonate:start --path` can set independently of config. A request that
+     * did not pass through the router falls back to the configured path, as
+     * Reverb does.
+     */
+    protected function pathForVerification(Request $request): string
+    {
+        $path = $request->getPath();
+        $base = $request->base();
+
+        if ($base->hasAttribute(Router::PREFIX_ATTRIBUTE)) {
+            $prefix = $base->getAttribute(Router::PREFIX_ATTRIBUTE);
+
+            if (is_string($prefix) && $prefix !== '' && str_starts_with($path, $prefix.'/')) {
+                return substr($path, strlen($prefix));
+            }
+
+            return $path;
+        }
+
+        if ($prefix = config('reverb.servers.reverb.path')) {
+            $path = '/'.ltrim(Str::after($path, rtrim($prefix, '/')), '/');
+        }
+
+        return $path;
     }
 
     /**
