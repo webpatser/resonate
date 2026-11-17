@@ -10,6 +10,9 @@ All notable changes to `webpatser/resonate` are documented here.
 
 ### Fixed
 
+- With scaling on, a presence channel's `user_count` (channel info, channels list, trigger with `info`) counts distinct users across nodes instead of adding up each node's count. Exact while every node holds at most 1000 members of the channel; above that a node reports its plain count and the total is an upper bound.
+- With scaling on, `GET /apps/{app}/channels/{channel}/users` asks the other nodes when the answering node does not know the presence channel, and returns 404 only when no node has users; a non-presence name gets 400.
+- A server started with `--path` and no configured path verifies signed HTTP API requests; the routed prefix is removed from the start of the path only.
 - A subscribe that fails (bad signature, invalid presence data) no longer leaves behind the empty channel it created; `ChannelRemoved` is dispatched for it.
 
 ### Added

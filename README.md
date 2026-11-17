@@ -107,6 +107,12 @@ Set `REVERB_SCALING_ENABLED=true` along with your `REDIS_*` variables. Multiple 
 
 Resonate uses a **pure JSON** envelope for cross-node messages, with no `serialize()` on the wire. This means a cluster cannot run mixed Resonate and `laravel/reverb` nodes; migration is all-at-once.
 
+### Differences from Reverb under scaling
+
+- A presence channel's `user_count` counts distinct users across nodes; Reverb sums each node's count. During a rolling deploy from an older release, nodes on the old build still add up counts.
+- `GET /apps/{app}/channels/{channel}/users` returns 400 for a non-presence name where Reverb returns 404. The answer waits for the other nodes for up to the collection window, and a node that does not answer in time is left out.
+- The HTTP API signature check strips the `--path` prefix, whether it comes from `--path` or from config.
+
 ## Server-side plugins
 
 Resonate is a product-agnostic Pusher relay, but the fiber runtime makes it a natural host for stateful, server-side application logic - periodic timers, custom message types, connection bookkeeping - without a second process. The plugin API exposes that without coupling Resonate to any one product.
