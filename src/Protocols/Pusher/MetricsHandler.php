@@ -77,6 +77,34 @@ class MetricsHandler
     protected array $pending = [];
 
     /**
+     * Internal key carrying a presence channel's member ids between nodes.
+     *
+     * Present only in sibling replies to a request carrying
+     * {@see WITH_MEMBER_IDS} and in the local set of a scaled gather, so a
+     * user on two nodes can be counted once; always stripped by the merge.
+     */
+    protected const string MEMBER_IDS = '_user_ids';
+
+    /**
+     * Request option asking a sibling to attach {@see MEMBER_IDS}.
+     *
+     * A node on an older build never sends it and merges unknown reply keys
+     * straight into its HTTP response, so a sibling attaches ids only when it
+     * sees this marker; without it the reply is what the older build sent.
+     */
+    protected const string WITH_MEMBER_IDS = '_with_user_ids';
+
+    /**
+     * The most member ids one node sends for one presence channel.
+     *
+     * Above this a node sends its plain count, keeping a reply for a channel
+     * at a few tens of kilobytes (1000 ids of up to a UUID each) however
+     * large the channel grows, while every channel within Pusher's default
+     * presence limit of 100 members still gets an exact count.
+     */
+    private const int MAX_MEMBER_IDS = 1000;
+
+    /**
      * Create an instance of the metrics handler.
      *
      * @param  float  $collectionWindow  Upper bound, in seconds, on the wait for sibling replies.
@@ -175,18 +203,23 @@ class MetricsHandler
             return;
         }
 
-        // A request from a sibling node: answer with our local metrics.
+        // A request from a sibling node: answer with our local metrics, with
+        // member ids only when the requester asked for them.
+        $type = MetricType::from($payload['type']);
+        $options = is_array($payload['options'] ?? null) ? $payload['options'] : [];
+        $withMemberIds = ($options[self::WITH_MEMBER_IDS] ?? false) === true;
+
+        unset($options[self::WITH_MEMBER_IDS]);
+
         app(PubSubProvider::class)->publish([
             'type' => 'metrics',
             'application' => $application->id(),
             'payload' => [
                 'key' => $key,
                 'node' => $this->nodeId,
-                'metrics' => $this->local(
-                    $application,
-                    MetricType::from($payload['type']),
-                    $payload['options'] ?? []
-                ),
+                'metrics' => $withMemberIds
+                    ? $this->scaledLocal($application, $type, $options)
+                    : $this->local($application, $type, $options),
             ],
         ]);
     }
@@ -225,7 +258,9 @@ class MetricsHandler
                     'key' => $requestId,
                     'node' => $this->nodeId,
                     'type' => $type->value,
-                    'options' => $options,
+                    'options' => in_array($type, [MetricType::CHANNEL, MetricType::CHANNELS], true)
+                        ? [...$options, self::WITH_MEMBER_IDS => true]
+                        : $options,
                 ],
             ]);
 
@@ -252,9 +287,60 @@ class MetricsHandler
             unset($this->pending[$requestId]);
         }
 
-        $sets[] = $this->local($application, $type, $options);
+        $sets[] = $this->scaledLocal($application, $type, $options);
 
         return $this->merge($sets, $type);
+    }
+
+    /**
+     * Gather this node's local metrics for a cross-node merge.
+     *
+     * Identical to {@see local()}, except that every presence channel entry
+     * carrying a `user_count` also carries its member ids under
+     * {@see MEMBER_IDS}, so the merge can count a user on two nodes once.
+     *
+     * @param  array<string, mixed>  $options
+     * @return array<string|int, mixed>
+     */
+    protected function scaledLocal(Application $application, MetricType $type, array $options): array
+    {
+        $metrics = $this->local($application, $type, $options);
+
+        return match ($type) {
+            MetricType::CHANNEL => $this->withMemberIds($application, (string) ($options['channel'] ?? ''), $metrics),
+            MetricType::CHANNELS => collect($metrics)
+                ->map(fn ($info, $channel) => is_array($info) ? $this->withMemberIds($application, (string) $channel, $info) : $info)
+                ->all(),
+            default => $metrics,
+        };
+    }
+
+    /**
+     * Attach the presence member ids to one channel's info when it has a user_count.
+     *
+     * @param  array<array-key, mixed>  $info
+     * @return array<array-key, mixed>
+     */
+    protected function withMemberIds(Application $application, string $name, array $info): array
+    {
+        if (! array_key_exists('user_count', $info)) {
+            return $info;
+        }
+
+        $channel = $this->channels->for($application)->find($name);
+
+        if ($channel === null || ! $this->isPresenceChannel($channel)) {
+            return $info;
+        }
+
+        $ids = $this->userIds($channel);
+
+        // Above the cap the plain user_count goes out and the merge adds it as is.
+        if (count($ids) <= self::MAX_MEMBER_IDS) {
+            $info[self::MEMBER_IDS] = $ids;
+        }
+
+        return $info;
     }
 
     /**
@@ -369,16 +455,42 @@ class MetricsHandler
     /**
      * Merge multiple channel info sets into a single set.
      *
+     * A presence `user_count` is the number of distinct member ids across
+     * every set that sent ids, plus the plain `user_count` of every set that
+     * did not (a node above {@see MAX_MEMBER_IDS} members on the channel, or
+     * a node on an older build). It is exact while every node sends ids.
+     * Otherwise it is an upper bound: it never undercounts, and it overcounts
+     * by one for each extra node a user is connected to beyond the first,
+     * whenever at least one of those nodes sent a plain count.
+     *
      * @param  array<int, array<array-key, mixed>>  $sets
      * @return array<array-key, mixed>
      */
     protected function mergeChannel(array $sets): array
     {
-        return collect($sets)
-            ->reduce(function ($carry, $set) {
-                collect($set)->each(fn ($value, $key) => $carry->put($key, match ($key) {
+        // Presence members reported with their ids are counted once across
+        // nodes; a set that reports a user_count without ids (a node on an
+        // older build) can only be added as-is.
+        $memberIds = [];
+        $uncountedUsers = 0;
+
+        $merged = collect($sets)
+            ->reduce(function ($carry, $set) use (&$memberIds, &$uncountedUsers) {
+                $ids = $set[self::MEMBER_IDS] ?? null;
+
+                if (array_key_exists('user_count', $set)) {
+                    if (is_array($ids)) {
+                        foreach ($ids as $id) {
+                            $memberIds[is_scalar($id) ? (string) $id : json_encode($id)] = true;
+                        }
+                    } else {
+                        $uncountedUsers += (int) $set['user_count'];
+                    }
+                }
+
+                collect($set)->except(self::MEMBER_IDS)->each(fn ($value, $key) => $carry->put($key, match ($key) {
                     'occupied' => $carry->get($key, false) || $value,
-                    'user_count' => $carry->get($key, 0) + $value,
+                    'user_count' => 0,
                     'subscription_count' => $carry->get($key, 0) + $value,
                     default => $value,
                 }));
@@ -386,6 +498,12 @@ class MetricsHandler
                 return $carry;
             }, collect())
             ->all();
+
+        if (array_key_exists('user_count', $merged)) {
+            $merged['user_count'] = count($memberIds) + $uncountedUsers;
+        }
+
+        return $merged;
     }
 
     /**

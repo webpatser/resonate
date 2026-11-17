@@ -94,9 +94,21 @@ trait InteractsWithChannelInformation
      */
     protected function userCount(Channel $channel): int
     {
+        return count($this->userIds($channel));
+    }
+
+    /**
+     * Get the ids of the unique users subscribed to the presence channel.
+     *
+     * @return array<int, mixed>
+     */
+    protected function userIds(Channel $channel): array
+    {
         return collect($channel->connections())
             ->map(fn ($connection) => $connection->data())
             ->unique('user_id')
-            ->count();
+            ->map(fn ($data) => $data['user_id'] ?? null)
+            ->values()
+            ->all();
     }
 }

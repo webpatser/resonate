@@ -327,6 +327,167 @@ it('merges presence data across two nodes', function () {
         ->toBe('{"1":{"name":"User 1"},"3":{},"2":{"name":"User 2"}}');
 });
 
+it('counts a presence user connected to two nodes once in the channel user_count', function () {
+    $handler = scaledMetrics();
+
+    // User 1 is on both nodes; the distinct users are 1, 2 and 3.
+    siblingNode(['occupied' => true, 'user_count' => 2, '_user_ids' => [1, 3]]);
+
+    presenceUser('presence-test-channel', 1);
+    presenceUser('presence-test-channel', 2);
+
+    $metrics = $handler->gather($this->application, 'channel', [
+        'channel' => 'presence-test-channel',
+        'info' => 'occupied,user_count',
+    ]);
+
+    expect($metrics)->toBe(['occupied' => true, 'user_count' => 3]);
+});
+
+it('counts a presence user connected to two nodes once in the channels user_count', function () {
+    $handler = scaledMetrics();
+
+    siblingNode(['presence-test-channel' => ['user_count' => 2, '_user_ids' => [1, 3]]]);
+
+    presenceUser('presence-test-channel', 1);
+    presenceUser('presence-test-channel', 2);
+
+    $metrics = $handler->gather($this->application, 'channels', ['info' => 'user_count']);
+
+    expect($metrics)->toBe(['presence-test-channel' => ['user_count' => 3]]);
+});
+
+it('adds the user_count of a sibling that reports no member ids', function () {
+    $handler = scaledMetrics();
+
+    // A node running an older build replies with the count alone.
+    siblingNode(['occupied' => true, 'user_count' => 2]);
+
+    presenceUser('presence-test-channel', 1);
+
+    $metrics = $handler->gather($this->application, 'channel', [
+        'channel' => 'presence-test-channel',
+        'info' => 'occupied,user_count',
+    ]);
+
+    expect($metrics)->toBe(['occupied' => true, 'user_count' => 3]);
+});
+
+/**
+ * Answer a sibling's channel request for the presence channel and return the reply metrics.
+ *
+ * @param  array<string, mixed>  $extraOptions
+ * @return array<string|int, mixed>
+ */
+function answerChannelRequest(MetricsHandler $handler, array $extraOptions = []): array
+{
+    $handler->publish([
+        'application' => test()->application,
+        'payload' => [
+            'key' => 'request-id',
+            'node' => 'another-node',
+            'type' => 'channel',
+            'options' => ['channel' => 'presence-test-channel', 'info' => 'user_count'] + $extraOptions,
+        ],
+    ]);
+
+    return test()->bus->replies()[0]['payload']['metrics'];
+}
+
+/**
+ * Add presence members with ids $from..$to straight onto the channel's
+ * connection store, skipping the member_added fan-out that makes a thousand
+ * real subscriptions quadratic.
+ */
+function addPresenceMembers(int $from, int $to): void
+{
+    $channel = channels()->findOrCreate('presence-test-channel');
+    $store = (fn () => $this->connections)->call($channel);
+
+    foreach (range($from, $to) as $id) {
+        $store->add(new FakeConnection, ['user_id' => $id, 'user_info' => []]);
+    }
+}
+
+it('asks siblings for member ids in every scaled channel request', function () {
+    $handler = scaledMetrics();
+
+    $handler->gather($this->application, 'channel', ['channel' => 'presence-test-channel', 'info' => 'user_count']);
+    $handler->gather($this->application, 'channels', ['info' => 'user_count']);
+
+    expect($this->bus->requests()[0]['payload']['options'])->toMatchArray(['_with_user_ids' => true])
+        ->and($this->bus->requests()[1]['payload']['options'])->toMatchArray(['_with_user_ids' => true]);
+});
+
+it('sends its presence member ids when the request asks for them', function () {
+    $handler = scaledMetrics();
+
+    presenceUser('presence-test-channel', 1);
+    presenceUser('presence-test-channel', 1);
+    presenceUser('presence-test-channel', 2);
+
+    expect(answerChannelRequest($handler, ['_with_user_ids' => true]))
+        ->toBe(['user_count' => 2, '_user_ids' => [1, 2]]);
+});
+
+it('answers a request without the marker exactly as the old build did', function () {
+    $handler = scaledMetrics();
+
+    presenceUser('presence-test-channel', 1);
+    presenceUser('presence-test-channel', 2);
+
+    // A node on the old build merges unknown keys straight into its HTTP
+    // response, so it must never receive member ids.
+    expect(answerChannelRequest($handler))->toBe(['user_count' => 2]);
+});
+
+it('sends member ids up to the threshold', function () {
+    $handler = scaledMetrics();
+
+    addPresenceMembers(1, 1000);
+
+    $metrics = answerChannelRequest($handler, ['_with_user_ids' => true]);
+
+    expect($metrics['user_count'])->toBe(1000)
+        ->and($metrics['_user_ids'])->toHaveCount(1000);
+});
+
+it('sends the plain count instead of member ids above the threshold', function () {
+    $handler = scaledMetrics();
+
+    addPresenceMembers(1, 1001);
+
+    expect(answerChannelRequest($handler, ['_with_user_ids' => true]))->toBe(['user_count' => 1001]);
+});
+
+it('dedupes a user reported with an int id by one node and a string id by another', function () {
+    $handler = scaledMetrics();
+
+    siblingNode(['occupied' => true, 'user_count' => 2, '_user_ids' => ['1', '3']]);
+
+    presenceUser('presence-test-channel', 1);
+
+    $metrics = $handler->gather($this->application, 'channel', [
+        'channel' => 'presence-test-channel',
+        'info' => 'occupied,user_count',
+    ]);
+
+    expect($metrics)->toBe(['occupied' => true, 'user_count' => 2]);
+});
+
+it('does not expose member ids when scaling is disabled', function () {
+    $this->app->forgetInstance(ServerProvider::class);
+
+    $handler = new MetricsHandler(app(ChannelManager::class));
+
+    presenceUser('presence-test-channel', 1);
+
+    expect($handler->gather($this->application, 'channel', [
+        'channel' => 'presence-test-channel',
+        'info' => 'occupied,user_count',
+    ]))->toBe(['occupied' => true, 'user_count' => 1]);
+});
+
 it('merges channel users across two nodes into a list without duplicates', function () {
     $handler = scaledMetrics();
 
