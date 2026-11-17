@@ -6,87 +6,15 @@ use Illuminate\Support\Arr;
 use League\Uri\Http;
 use Webpatser\Resonate\Protocols\Pusher\Http\Controllers\ChannelsController;
 use Webpatser\Resonate\Server\Router;
-use Webpatser\Resonate\Tests\Fakes\FakeConnection;
 use Webpatser\Resonate\Tests\Feature\Protocols\Pusher\Http\RequestSigner;
 
 /*
  * Exercises ChannelsController: GET /apps/{appId}/channels. Ported from
  * Reverb's ChannelsControllerTest, adapted from the "boot a server and
  * HTTP-call it" style to invoking the controller directly with a signed
- * Server\Request. Channel state is seeded through the channel manager.
+ * Server\Request. Channel state is seeded through the channel manager. The
+ * signedChannelRequest() and subscribeToChannel() helpers live in tests/Pest.php.
  */
-
-if (! function_exists('signedChannelRequest')) {
-    /**
-     * Build a fledge request signed the way Pusher signs it.
-     *
-     * @param  array<string, string>  $query
-     * @param  array<string, string>  $routeParams
-     */
-    function signedChannelRequest(string $method, string $path, array $query = [], string $body = '', array $routeParams = ['appId' => 'app-id']): FledgeRequest
-    {
-        $query += [
-            'auth_key' => 'app-key',
-            'auth_timestamp' => (string) time(),
-            'auth_version' => '1.0',
-        ];
-
-        $params = $query;
-
-        if ($body !== '') {
-            $params['body_md5'] = md5($body);
-        }
-
-        ksort($params);
-
-        $pairs = [];
-        foreach ($params as $key => $value) {
-            $pairs[] = "{$key}={$value}";
-        }
-
-        $query['auth_signature'] = hash_hmac(
-            'sha256',
-            implode("\n", [$method, $path, implode('&', $pairs)]),
-            'app-secret',
-        );
-
-        $uri = 'http://localhost'.$path.'?'.http_build_query($query);
-
-        $request = new FledgeRequest(
-            Mockery::mock(Client::class),
-            $method,
-            Http::new($uri),
-            [],
-            $body,
-        );
-
-        $request->setAttribute(Router::class, $routeParams);
-
-        return $request;
-    }
-}
-
-if (! function_exists('subscribeToChannel')) {
-    /**
-     * Subscribe a fresh connection to the given channel.
-     *
-     * @param  array<string, mixed>  $userInfo
-     */
-    function subscribeToChannel(string $name, ?array $userInfo = null): FakeConnection
-    {
-        $channel = channels()->findOrCreate($name);
-        $connection = new FakeConnection;
-
-        if ($userInfo !== null) {
-            $data = json_encode($userInfo);
-            $channel->subscribe($connection, validAuth($connection->id(), $name, $data), $data);
-        } else {
-            $channel->subscribe($connection);
-        }
-
-        return $connection;
-    }
-}
 
 it('can return all channel information', function () {
     subscribeToChannel('test-channel-one');

@@ -1,7 +1,10 @@
 <?php
 
+use Fledge\Async\Http\Server\Driver\Client;
+use Fledge\Async\Http\Server\Request as FledgeRequest;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use League\Uri\Http;
 use Revolt\EventLoop;
 use Webpatser\Resonate\Application;
 use Webpatser\Resonate\ConfigApplicationProvider;
@@ -13,6 +16,7 @@ use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelConnectionManager;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\Managers\ArrayChannelConnectionManager;
 use Webpatser\Resonate\Protocols\Pusher\Managers\ArrayChannelManager;
+use Webpatser\Resonate\Server\Router;
 use Webpatser\Resonate\Tests\Fakes\FakeConnection;
 use Webpatser\Resonate\Tests\TestCase;
 
@@ -113,4 +117,72 @@ function channels(?Application $app = null): ChannelManager
 {
     return app(ChannelManager::class)
         ->for($app ?: app(ApplicationProvider::class)->all()->first());
+}
+
+/**
+ * Build a fledge request signed the way Pusher signs it.
+ *
+ * @param  array<string, string>  $query
+ * @param  array<string, string>  $routeParams
+ */
+function signedChannelRequest(string $method, string $path, array $query = [], string $body = '', array $routeParams = ['appId' => 'app-id']): FledgeRequest
+{
+    $query += [
+        'auth_key' => 'app-key',
+        'auth_timestamp' => (string) time(),
+        'auth_version' => '1.0',
+    ];
+
+    $params = $query;
+
+    if ($body !== '') {
+        $params['body_md5'] = md5($body);
+    }
+
+    ksort($params);
+
+    $pairs = [];
+    foreach ($params as $key => $value) {
+        $pairs[] = "{$key}={$value}";
+    }
+
+    $query['auth_signature'] = hash_hmac(
+        'sha256',
+        implode("\n", [$method, $path, implode('&', $pairs)]),
+        'app-secret',
+    );
+
+    $uri = 'http://localhost'.$path.'?'.http_build_query($query);
+
+    $request = new FledgeRequest(
+        Mockery::mock(Client::class),
+        $method,
+        Http::new($uri),
+        [],
+        $body,
+    );
+
+    $request->setAttribute(Router::class, $routeParams);
+
+    return $request;
+}
+
+/**
+ * Subscribe a fresh connection to the given channel.
+ *
+ * @param  array<string, mixed>  $userInfo
+ */
+function subscribeToChannel(string $name, ?array $userInfo = null): FakeConnection
+{
+    $channel = channels()->findOrCreate($name);
+    $connection = new FakeConnection;
+
+    if ($userInfo !== null) {
+        $data = json_encode($userInfo);
+        $channel->subscribe($connection, validAuth($connection->id(), $name, $data), $data);
+    } else {
+        $channel->subscribe($connection);
+    }
+
+    return $connection;
 }

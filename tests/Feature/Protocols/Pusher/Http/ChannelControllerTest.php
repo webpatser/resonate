@@ -10,7 +10,7 @@ use Webpatser\Resonate\Tests\Feature\Protocols\Pusher\Http\RequestSigner;
 /*
  * Exercises ChannelController: GET /apps/{appId}/channels/{channel}.
  * Ported from Reverb's ChannelControllerTest. The shared signedChannelRequest()
- * and subscribeToChannel() helpers are defined in ChannelsControllerTest.php.
+ * and subscribeToChannel() helpers are defined in tests/Pest.php.
  */
 
 it('can return data for a single channel', function () {

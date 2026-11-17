@@ -11,7 +11,7 @@ use Webpatser\Resonate\Tests\Feature\Protocols\Pusher\Http\RequestSigner;
 /*
  * Exercises ConnectionsController: GET /apps/{appId}/connections. Ported from
  * Reverb's ConnectionsControllerTest. The shared signedChannelRequest() and
- * subscribeToChannel() helpers are defined in ChannelsControllerTest.php.
+ * subscribeToChannel() helpers are defined in tests/Pest.php.
  */
 
 it('can return a connection count', function () {
