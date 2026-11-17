@@ -219,6 +219,7 @@ Restart the server (`php artisan resonate:start`, or `resonate:reload` for a zer
 | `broadcast($app, string $channel, string $event, array $data = [], ?Connection $except = null)` | Send to every connection on a channel. Routed through the event dispatcher, so with scaling enabled it reaches every node. |
 | `terminate(Connection $c, ?string $event = null, array $data = [])` | Optionally send a final event, then close the connection (local node only). |
 | `unsubscribe(Connection $c, string $channel)` | Remove a connection from one channel, leaving the socket and its other subscriptions intact. |
+| `joinUserChannel(Connection $c, string $userId)` | Subscribe a connection to `#server-to-user-{id}` once the plugin has verified its identity. Applies the subscription cap and plugin `onSubscribe` hooks; throws when refused. |
 | `connectionsOn($app, string $channel): array` | The live `ChannelConnection`s for a channel on this node. |
 | `application(?string $id = null): Application` | Resolve one application. |
 | `applications(): Collection` | Every configured application. |

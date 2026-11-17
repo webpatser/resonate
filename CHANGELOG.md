@@ -4,12 +4,22 @@ All notable changes to `webpatser/resonate` are documented here.
 
 ## Unreleased
 
+### Security
+
+- A client `pusher:subscribe` to a `#server-to-user-*` channel is refused with error `4009` in `Server::message()`, before plugin interceptors run and before any channel exists, with or without plugins and with channel name validation off. A malformed user channel name still gets the validator's `4200`.
+
+### Fixed
+
+- A subscribe that fails (bad signature, invalid presence data) no longer leaves behind the empty channel it created; `ChannelRemoved` is dispatched for it.
+
 ### Added
 
+- `PluginContext::joinUserChannel()` for plugins that have verified a connection's identity; it applies the subscription cap and plugin `onSubscribe` hooks. Plugins that hand a subscribe straight to `EventHandler::handle()` (resonate-users up to 1.1.0) keep working.
 - `connection_limit` and `connection_limit_per_ip` under `servers.reverb` (env `REVERB_CONNECTION_LIMIT`, `REVERB_CONNECTION_LIMIT_PER_IP`), unlimited by default.
 
 ### Changed
 
+- Plugin interceptors no longer see client subscribes to user channels; the refusal message comes from core.
 - The server no longer inherits the transport defaults of 1000 connections and 10 per IP, which silently dropped clients behind a proxy; see [UPGRADE.md](UPGRADE.md) to keep the old limits.
 
 ## v1.1.1 - 2026-11-11
