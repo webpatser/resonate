@@ -14,6 +14,7 @@ All notable changes to `webpatser/resonate` are documented here.
 - With scaling on, `GET /apps/{app}/channels/{channel}/users` asks the other nodes when the answering node does not know the presence channel, and returns 404 only when no node has users; a non-presence name gets 400.
 - A server started with `--path` and no configured path verifies signed HTTP API requests; the routed prefix is removed from the start of the path only.
 - A subscribe that fails (bad signature, invalid presence data) no longer leaves behind the empty channel it created; `ChannelRemoved` is dispatched for it.
+- With scaling, a channel that was emptied during a presence leave is no longer removed twice when the connection leaves all its channels, so `ChannelRemoved` is dispatched once.
 
 ### Added
 
@@ -24,6 +25,10 @@ All notable changes to `webpatser/resonate` are documented here.
 
 - Plugin interceptors no longer see client subscribes to user channels; the refusal message comes from core.
 - The server no longer inherits the transport defaults of 1000 connections and 10 per IP, which silently dropped clients behind a proxy; see [UPGRADE.md](UPGRADE.md) to keep the old limits.
+- Performance: the socket to exclude from a broadcast (`socket_id` on a pub/sub message, an HTTP trigger or a batch trigger, which is every `toOthers()` broadcast) is found with one keyed lookup in the open connections instead of a walk over every channel.
+- Performance: closing or pruning a connection leaves only the channels that connection joined (plus any vacant ones) instead of visiting every channel of the app; which channels are removed and the order of `ChannelRemoved` events are unchanged.
+- Performance: the per-connection subscription limit is counted from the channels the connection joined instead of walking every channel on each subscribe.
+- For plugin authors: the join record is kept by the in-tree `ArrayChannelManager`; under a custom or wrapping `ChannelManager` the previous full walk is used, so behaviour is unchanged there.
 
 ## v1.1.1 - 2026-11-11
 
