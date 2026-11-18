@@ -1,7 +1,9 @@
 <?php
 
+use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelConnectionManager;
 use Webpatser\Resonate\Protocols\Pusher\Http\Controllers\EventsBatchController;
 use Webpatser\Resonate\Protocols\Pusher\MetricsHandler;
+use Webpatser\Resonate\Tests\Fakes\CountingChannelConnectionManager;
 use Webpatser\Resonate\Tests\Fakes\FakeConnection;
 use Webpatser\Resonate\Tests\Feature\Protocols\Pusher\Http\RequestSigner;
 
@@ -79,6 +81,11 @@ it('delivers each event in the batch to subscribed connections', function () {
 it('can ignore a subscriber via socket_id in a batch item', function () {
     $ignored = new FakeConnection;
     $other = new FakeConnection;
+
+    // Registered as open, as Server::open() does before any subscribe.
+    channels()->addConnection($ignored);
+    channels()->addConnection($other);
+
     RequestSigner::subscribe($ignored, 'test-channel');
     RequestSigner::subscribe($other, 'test-channel');
 
@@ -96,6 +103,41 @@ it('can ignore a subscriber via socket_id in a batch item', function () {
     expect($response->getStatus())->toBe(200)
         ->and($ignored->messages)->toBeEmpty()
         ->and($other->messages)->toHaveCount(1);
+});
+
+it('looks up each ignored socket in a batch without visiting every channel of the app', function () {
+    $this->app->bind(ChannelConnectionManager::class, fn () => new CountingChannelConnectionManager);
+
+    $ignored = new FakeConnection;
+    $other = new FakeConnection;
+    channels()->addConnection($ignored);
+    channels()->addConnection($other);
+
+    foreach (range(1, 50) as $i) {
+        RequestSigner::subscribe(new FakeConnection, "busy-{$i}");
+    }
+
+    RequestSigner::subscribe($ignored, 'test-channel');
+    RequestSigner::subscribe($other, 'test-channel');
+
+    CountingChannelConnectionManager::reset();
+
+    $item = fn (string $socketId) => [
+        'name' => 'NewEvent',
+        'channel' => 'test-channel',
+        'data' => json_encode(['some' => 'data']),
+        'socket_id' => $socketId,
+    ];
+
+    $response = (new EventsBatchController)->handleRequest(RequestSigner::post('/apps/app-id/batch_events', [
+        'batch' => [$item($ignored->id()), $item('999.999')],
+    ]));
+
+    // One read of the target channel per item for the fan-out, none for the lookups.
+    expect($response->getStatus())->toBe(200)
+        ->and(CountingChannelConnectionManager::$reads)->toBe(2)
+        ->and($ignored->messages)->toHaveCount(1)
+        ->and($other->messages)->toHaveCount(2);
 });
 
 it('validates an invalid batch payload', function () {

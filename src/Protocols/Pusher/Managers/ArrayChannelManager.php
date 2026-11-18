@@ -196,12 +196,67 @@ class ArrayChannelManager implements ChannelManagerInterface
 
     /**
      * Unsubscribe from all channels.
+     *
+     * Visits the channels the connection joined and the vacant ones, in
+     * registry order, rather than every channel of the app: those are the only
+     * channels on which unsubscribing it has any effect, so what is removed,
+     * what is announced and in which order stays as it was.
      */
     public function unsubscribeFromAll(Connection $connection): void
     {
-        foreach ($this->all() as $channel) {
+        foreach ($this->registry->channelsToLeave($this->applicationId(), $connection->id()) as $name => $channel) {
+            // Removed while an earlier leave was suspended (a presence leave
+            // asks the fleet) and the connection is not in it: unsubscribing
+            // would only remove it a second time, or forget a channel
+            // recreated under the same name since.
+            if ($this->find((string) $name) !== $channel && $channel->findById($connection->id()) === null) {
+                continue;
+            }
+
             $channel->unsubscribe($connection);
         }
+    }
+
+    /**
+     * Get the registered channels the connection is recorded as having joined.
+     *
+     * Null when this manager's registry is not the one joins are recorded in,
+     * which is only the bound in-tree manager's: a wrapping manager or one
+     * with its own registry records nothing, so callers fall back to walking
+     * every channel. A returned channel may not hold the connection (one
+     * removed and recreated under the same name), so check membership.
+     *
+     * @return array<string, Channel>|null
+     */
+    public function joinedChannels(Connection $connection): ?array
+    {
+        $bound = app(ChannelManagerInterface::class);
+
+        if (! $bound instanceof self || $bound->registry !== $this->registry) {
+            return null;
+        }
+
+        return $this->registry->joinedChannels($this->applicationId(), $connection->id());
+    }
+
+    /**
+     * Record that the connection joined the given channel.
+     *
+     * @internal Called by {@see Channel::subscribe()}.
+     */
+    public function joined(Connection $connection, Channel $channel): void
+    {
+        $this->registry->join($this->applicationId(), $connection->id(), $channel);
+    }
+
+    /**
+     * Record that the connection left the given channel.
+     *
+     * @internal Called by {@see Channel::unsubscribe()}.
+     */
+    public function left(Connection $connection, Channel $channel): void
+    {
+        $this->registry->leave($this->applicationId(), $connection->id(), $channel);
     }
 
     /**

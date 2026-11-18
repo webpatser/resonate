@@ -8,6 +8,7 @@ use Webpatser\Resonate\Loggers\Log;
 use Webpatser\Resonate\Loggers\Sanitizer;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelConnectionManager;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
+use Webpatser\Resonate\Protocols\Pusher\Managers\ArrayChannelManager;
 use Webpatser\Resonate\Server\RawConnection;
 
 class Channel
@@ -25,6 +26,21 @@ class Channel
      * @var array<string, array{holds: int, frames: array<int, string>, overflowed: bool}>
      */
     protected array $held = [];
+
+    /**
+     * The channel manager scoped to this channel's application, once resolved.
+     */
+    protected ?ChannelManager $manager = null;
+
+    /**
+     * The bound manager the scoped one was built from.
+     */
+    protected ?ChannelManager $managerSource = null;
+
+    /**
+     * The ID of the application the scoped manager was built for.
+     */
+    protected ?string $managerApplication = null;
 
     /**
      * Create a new channel instance.
@@ -74,6 +90,34 @@ class Channel
     public function subscribe(Connection $connection, ?string $auth = null, ?string $data = null): void
     {
         $this->connections->add($connection, $data ? json_decode($data, associative: true, flags: JSON_THROW_ON_ERROR) : []);
+
+        $manager = $this->manager($connection);
+
+        if ($manager instanceof ArrayChannelManager) {
+            $manager->joined($connection, $this);
+        }
+    }
+
+    /**
+     * Get the channel manager scoped to the connection's application.
+     *
+     * A channel lives in one application's registry, so the scoped view is
+     * resolved once and reused by every later subscribe and unsubscribe,
+     * rather than built anew on the hottest path in the server. It is built
+     * again only if the bound manager or the application changes.
+     */
+    protected function manager(Connection $connection): ChannelManager
+    {
+        $bound = app(ChannelManager::class);
+        $application = $connection->app()->id();
+
+        if ($this->manager === null || $this->managerSource !== $bound || $this->managerApplication !== $application) {
+            $this->manager = $bound->for($connection->app());
+            $this->managerSource = $bound;
+            $this->managerApplication = $application;
+        }
+
+        return $this->manager;
     }
 
     /**
@@ -83,6 +127,12 @@ class Channel
     {
         $this->connections->remove($connection);
 
+        $manager = $this->manager($connection);
+
+        if ($manager instanceof ArrayChannelManager) {
+            $manager->left($connection, $this);
+        }
+
         // Frames held for the old subscription are not owed to a subscribe
         // of the same socket that is still in flight and shares the hold.
         if (isset($this->held[$connection->id()])) {
@@ -90,7 +140,7 @@ class Channel
         }
 
         if ($this->connections->isEmpty()) {
-            app(ChannelManager::class)->for($connection->app())->remove($this);
+            $manager->remove($this);
         }
     }
 

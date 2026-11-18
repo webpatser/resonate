@@ -145,7 +145,6 @@ class RequestSigner
     ): void {
         $manager = app(ChannelManager::class)
             ->for(app(ApplicationProvider::class)->all()->first());
-
         $auth = null;
         $data = null;
 

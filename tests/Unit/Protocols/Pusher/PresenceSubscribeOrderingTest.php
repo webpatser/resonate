@@ -1,10 +1,12 @@
 <?php
 
 use Fledge\Async\DeferredFuture;
+use Illuminate\Support\Facades\Event;
 use Webpatser\Resonate\Application;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
 use Webpatser\Resonate\Contracts\Connection;
 use Webpatser\Resonate\Contracts\ServerProvider;
+use Webpatser\Resonate\Events\ChannelRemoved;
 use Webpatser\Resonate\Plugins\Contracts\ConnectionLifecycle;
 use Webpatser\Resonate\Plugins\Contracts\ServerPlugin;
 use Webpatser\Resonate\Plugins\PluginContext;
@@ -305,6 +307,35 @@ it('still announces a user present elsewhere when the join is cancelled mid-quer
     'joined elsewhere later' => 2.0,
     'joined elsewhere earlier' => 0.5,
 ]);
+
+it('removes a channel emptied during a presence leave only once', function () {
+    Event::fake([ChannelRemoved::class]);
+
+    $leaving = joinRoom(new FakeConnection, 1);
+
+    // Empty and registered after the room, so the walk reaches it later.
+    channels()->findOrCreate('public-later');
+
+    // While the leave asks the fleet about the user, another connection
+    // joins and leaves the empty channel, which removes it.
+    $this->fleet = function (Application $app, string $type) {
+        if ($type === 'presence_connections') {
+            $visitor = new FakeConnection;
+            $channel = channels()->find('public-later');
+
+            $channel?->subscribe($visitor);
+            $channel?->unsubscribe($visitor);
+        }
+
+        return [];
+    };
+
+    channels()->unsubscribeFromAll($leaving);
+
+    expect(Event::dispatched(ChannelRemoved::class, fn (ChannelRemoved $event) => $event->channel->name() === 'public-later'))
+        ->toHaveCount(1)
+        ->and(channels()->exists('public-later'))->toBeFalse();
+});
 
 it('does not announce a cancelled join when the user is present nowhere', function (string $how) {
     $joiner = new FakeConnection;

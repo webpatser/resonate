@@ -1,6 +1,10 @@
 <?php
 
+use Illuminate\Support\Facades\Event;
+use Webpatser\Resonate\Events\ChannelRemoved;
+use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelConnectionManager;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
+use Webpatser\Resonate\Tests\Fakes\CountingChannelConnectionManager;
 use Webpatser\Resonate\Tests\Fakes\FakeConnection;
 
 beforeEach(function () {
@@ -63,6 +67,95 @@ it('can unsubscribe a connection from all channels', function () {
     $this->channelManager->unsubscribeFromAll($this->connection);
 
     collect($this->channelManager->all())->each(fn ($channel) => expect($channel->connections())->toHaveCount(0));
+});
+
+it('unsubscribes from all channels by visiting only the channels of the connection', function () {
+    $this->app->bind(ChannelConnectionManager::class, fn () => new CountingChannelConnectionManager);
+
+    $bystander = new FakeConnection;
+
+    foreach (range(1, 100) as $i) {
+        $this->channelManager->findOrCreate("busy-{$i}")->subscribe($bystander);
+    }
+
+    $this->channelManager->findOrCreate('mine-1')->subscribe($this->connection);
+    $this->channelManager->findOrCreate('mine-2')->subscribe($this->connection);
+
+    CountingChannelConnectionManager::reset();
+
+    $this->channelManager->unsubscribeFromAll($this->connection);
+
+    expect(CountingChannelConnectionManager::$removals)->toBe(2)
+        ->and($this->channelManager->exists('mine-1'))->toBeFalse()
+        ->and($this->channelManager->exists('mine-2'))->toBeFalse()
+        ->and($this->channelManager->all())->toHaveCount(100);
+});
+
+it('still reaps empty channels in registry order when unsubscribing from all', function () {
+    Event::fake([ChannelRemoved::class]);
+
+    $bystander = new FakeConnection;
+
+    $this->channelManager->findOrCreate('alpha');
+    $bravo = $this->channelManager->findOrCreate('bravo');
+    $this->channelManager->findOrCreate('charlie')->subscribe($this->connection);
+    $bravo->subscribe($this->connection);
+    $this->channelManager->findOrCreate('delta')->subscribe($bystander);
+    $this->channelManager->findOrCreate('echo')->subscribe($this->connection);
+    $this->channelManager->findOrCreate('echo')->subscribe($bystander);
+
+    $this->channelManager->unsubscribeFromAll($this->connection);
+
+    $removed = [];
+
+    Event::assertDispatched(ChannelRemoved::class, function (ChannelRemoved $event) use (&$removed) {
+        $removed[] = $event->channel->name();
+
+        return true;
+    });
+
+    // The never-subscribed channels are reaped as the full walk did, each once,
+    // in the order the channels were created rather than the order joined.
+    expect($removed)->toBe(['test-channel-0', 'alpha', 'bravo', 'charlie'])
+        ->and(array_keys($this->channelManager->all()))->toBe(['delta', 'echo'])
+        ->and($this->channelManager->find('echo')->connections())->toHaveKey($bystander->id())
+        ->and($this->channelManager->find('echo')->connections())->not->toHaveKey($this->connection->id());
+});
+
+it('forgets a left channel so a later unsubscribe from all does not visit it', function () {
+    $this->app->bind(ChannelConnectionManager::class, fn () => new CountingChannelConnectionManager);
+
+    $bystander = new FakeConnection;
+
+    $channel = $this->channelManager->findOrCreate('left');
+    $channel->subscribe($bystander);
+    $channel->subscribe($this->connection);
+    $channel->unsubscribe($this->connection);
+
+    $this->channelManager->findOrCreate('kept')->subscribe($this->connection);
+
+    CountingChannelConnectionManager::reset();
+
+    $this->channelManager->unsubscribeFromAll($this->connection);
+
+    expect(CountingChannelConnectionManager::$removals)->toBe(1)
+        ->and($this->channelManager->exists('left'))->toBeTrue()
+        ->and($this->channelManager->exists('kept'))->toBeFalse();
+});
+
+it('unsubscribes from a channel recreated under the same name', function () {
+    $first = $this->channelManager->findOrCreate('recreated');
+    $first->subscribe($this->connection);
+    $this->channelManager->remove($first);
+
+    $second = $this->channelManager->findOrCreate('recreated');
+    $second->subscribe($this->connection);
+    $second->subscribe(new FakeConnection);
+
+    $this->channelManager->unsubscribeFromAll($this->connection);
+
+    expect($this->channelManager->find('recreated'))->toBe($second)
+        ->and($second->findById($this->connection->id()))->toBeNull();
 });
 
 it('can get the data for a connection subscribed to a channel', function () {

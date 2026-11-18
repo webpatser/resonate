@@ -41,8 +41,10 @@ class EventsBatchController extends Controller
                     'channel' => $item['channel'],
                     'data' => $item['data'],
                 ],
+                // A keyed lookup in the open connections rather than a walk
+                // over every channel; a socket on another node misses.
                 isset($item['socket_id'])
-                    ? $channels->findConnection($item['socket_id'])?->connection()
+                    ? $channels->openConnections()[$item['socket_id']] ?? null
                     : null,
                 $item['socket_id'] ?? null,
             );

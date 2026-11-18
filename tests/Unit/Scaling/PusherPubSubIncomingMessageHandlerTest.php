@@ -1,7 +1,9 @@
 <?php
 
 use Webpatser\Resonate\Contracts\ApplicationProvider;
+use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelConnectionManager;
 use Webpatser\Resonate\Scaling\PusherPubSubIncomingMessageHandler;
+use Webpatser\Resonate\Tests\Fakes\CountingChannelConnectionManager;
 use Webpatser\Resonate\Tests\Fakes\FakeConnection;
 
 /*
@@ -53,6 +55,10 @@ it('excludes the originating socket id from a message envelope', function () {
     $sender = new FakeConnection;
     $receiver = new FakeConnection;
 
+    // Registered as open, as Server::open() does before any subscribe.
+    channels($this->application)->addConnection($sender);
+    channels($this->application)->addConnection($receiver);
+
     $channel = channels($this->application)->findOrCreate('test-channel');
     $channel->subscribe($sender);
     $channel->subscribe($receiver);
@@ -73,6 +79,37 @@ it('excludes the originating socket id from a message envelope', function () {
     $sender->assertNothingReceived();
     $receiver->assertReceivedCount(1);
 });
+
+it('looks up the excluded socket without visiting every channel of the app', function (bool $local) {
+    $this->app->bind(ChannelConnectionManager::class, fn () => new CountingChannelConnectionManager);
+
+    $sender = openConnection(app: $this->application);
+    $receiver = openConnection(app: $this->application);
+
+    foreach (range(1, 50) as $i) {
+        channels($this->application)->findOrCreate("busy-{$i}")->subscribe(new FakeConnection);
+    }
+
+    $channel = channels($this->application)->findOrCreate('test-channel');
+    $channel->subscribe($sender);
+    $channel->subscribe($receiver);
+
+    CountingChannelConnectionManager::reset();
+
+    $this->handler->handle(json_encode([
+        'type' => 'message',
+        'application' => 'app-id',
+        // A socket of a sibling node is the common case: it is open nowhere here.
+        'socket_id' => $local ? $sender->id() : '999.999',
+        'payload' => ['channel' => 'test-channel', 'event' => 'x', 'data' => []],
+    ]));
+
+    // One read of the target channel for the fan-out, none for the lookup.
+    expect(CountingChannelConnectionManager::$reads)->toBe(1);
+
+    $receiver->assertReceivedCount(1);
+    $sender->assertReceivedCount($local ? 0 : 1);
+})->with(['local socket' => true, 'remote socket' => false]);
 
 it('disconnects the matching user on a terminate envelope', function () {
     $matching = new FakeConnection;

@@ -3,7 +3,9 @@
 namespace Webpatser\Resonate\Scaling;
 
 use Throwable;
+use Webpatser\Resonate\Application;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
+use Webpatser\Resonate\Contracts\Connection;
 use Webpatser\Resonate\Loggers\Log;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\EventDispatcher;
@@ -52,14 +54,14 @@ class PusherPubSubIncomingMessageHandler implements PubSubIncomingMessageHandler
             $application = app(ApplicationProvider::class)->findById($event['application'] ?? '');
 
             $except = isset($event['socket_id'])
-                ? app(ChannelManager::class)->for($application)->findConnection($event['socket_id'])
+                ? $this->openConnection($application, $event['socket_id'])
                 : null;
 
             match ($event['type'] ?? null) {
                 'message' => EventDispatcher::dispatchSynchronously(
                     $application,
                     $event['payload'],
-                    $except?->connection()
+                    $except
                 ),
                 'metrics' => app(MetricsHandler::class)->publish([
                     'application' => $application,
@@ -71,6 +73,21 @@ class PusherPubSubIncomingMessageHandler implements PubSubIncomingMessageHandler
         } catch (Throwable $e) {
             Log::error('Pub/sub envelope dropped: '.$e->getMessage());
         }
+    }
+
+    /**
+     * Find the open connection on this node with the given socket id.
+     *
+     * A keyed lookup in the open-connection registry rather than a walk over
+     * every channel of the app. The socket of a sibling node is open nowhere
+     * here, which is the common case, so the walk visited every channel on
+     * every node for each envelope. Every subscribed connection is registered
+     * as open before it can subscribe and stays registered until it has left
+     * every channel, so the excluded socket is the same one.
+     */
+    protected function openConnection(Application $application, string $socketId): ?Connection
+    {
+        return app(ChannelManager::class)->for($application)->openConnections()[$socketId] ?? null;
     }
 
     /**

@@ -18,6 +18,7 @@ use Webpatser\Resonate\Protocols\Pusher\Channels\Channel;
 use Webpatser\Resonate\Protocols\Pusher\Concerns\InteractsWithChannelInformation;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
 use Webpatser\Resonate\Protocols\Pusher\Exceptions\SubscriptionLimitExceeded;
+use Webpatser\Resonate\Protocols\Pusher\Managers\ArrayChannelManager;
 
 /**
  * @phpstan-type SubscribeState array{calls: int, notifying: int, announced: bool, idle: ?DeferredFuture<null>, fibers: list<int>, epoch: int}
@@ -257,7 +258,15 @@ class EventHandler
 
         $subscriptions = 0;
 
-        foreach ($channels->all() as $existing) {
+        // The channels the connection joined rather than every channel of the
+        // app, so a subscribe costs the same however many channels exist.
+        // Each one is still checked for membership, so the cap counts exactly
+        // the registered channels holding the connection, as the walk did.
+        $candidates = $channels instanceof ArrayChannelManager
+            ? $channels->joinedChannels($connection)
+            : null;
+
+        foreach ($candidates ?? $channels->all() as $existing) {
             if ($existing->findById($connection->id()) === null) {
                 continue;
             }

@@ -32,8 +32,10 @@ class EventsController extends Controller
 
         $except = null;
 
+        // A keyed lookup in the open connections rather than a walk over every
+        // channel. A socket on another node is open nowhere here and misses.
         if ($socketId = $payload['socket_id'] ?? null) {
-            $except = $request->requireChannels()->findConnection($socketId);
+            $except = $request->requireChannels()->openConnections()[$socketId] ?? null;
         }
 
         EventDispatcher::dispatch(
@@ -43,7 +45,7 @@ class EventsController extends Controller
                 'channels' => $channels,
                 'data' => $payload['data'],
             ],
-            $except ? $except->connection() : null,
+            $except,
             $payload['socket_id'] ?? null,
         );
 

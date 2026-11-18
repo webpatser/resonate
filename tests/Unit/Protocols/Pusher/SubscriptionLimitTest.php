@@ -4,7 +4,9 @@ use Illuminate\Support\Facades\Event;
 use Webpatser\Resonate\Events\ChannelCreated;
 use Webpatser\Resonate\Events\ChannelRemoved;
 use Webpatser\Resonate\Protocols\Pusher\Channels\Channel;
+use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelConnectionManager;
 use Webpatser\Resonate\Protocols\Pusher\Server;
+use Webpatser\Resonate\Tests\Fakes\CountingChannelConnectionManager;
 use Webpatser\Resonate\Tests\Fakes\FakeConnection;
 
 /*
@@ -59,6 +61,55 @@ it('rejects a subscribe once the connection is at its cap', function () {
         // The rejected channel must not have been allocated: creating it first
         // and refusing afterwards would leave the allocation primitive intact.
         ->and(channels()->find('public-three'))->toBeNull();
+});
+
+it('checks the cap at a cost that does not grow with the channels of the app', function () {
+    $this->app->bind(ChannelConnectionManager::class, fn () => new CountingChannelConnectionManager);
+
+    $this->server->open($first = new FakeConnection);
+    $this->server->open($second = new FakeConnection);
+
+    foreach ([$first, $second] as $i => $connection) {
+        subscribeTo($connection, "held-{$i}-one");
+        subscribeTo($connection, "held-{$i}-two");
+    }
+
+    CountingChannelConnectionManager::reset();
+    subscribeTo($first, 'fresh-first');
+    $few = CountingChannelConnectionManager::$lookups;
+
+    $bystander = new FakeConnection;
+
+    foreach (range(1, 100) as $i) {
+        channels()->findOrCreate("busy-{$i}")->subscribe($bystander);
+    }
+
+    CountingChannelConnectionManager::reset();
+    subscribeTo($second, 'fresh-second');
+
+    expect(CountingChannelConnectionManager::$lookups)->toBe($few)
+        ->and(channels()->find('fresh-second')->findById($second->id()))->not->toBeNull();
+});
+
+it('does not count a channel removed and recreated without the connection', function () {
+    $this->app['config']->set('reverb.servers.reverb.max_subscriptions_per_connection', 2);
+
+    $this->server->open($connection = new FakeConnection);
+
+    subscribeTo($connection, 'public-one');
+    subscribeTo($connection, 'public-gone');
+
+    // Removed while the connection is still in it, then recreated without it.
+    channels()->remove(channels()->find('public-gone'));
+    channels()->findOrCreate('public-gone')->subscribe(new FakeConnection);
+
+    subscribeTo($connection, 'public-two');
+
+    expect(receivedError($connection, 'Subscription limit exceeded'))->toBeFalse();
+
+    subscribeTo($connection, 'public-three');
+
+    expect(receivedError($connection, 'Subscription limit exceeded'))->toBeTrue();
 });
 
 it('still allows a re-subscribe to a channel the connection already holds', function () {
