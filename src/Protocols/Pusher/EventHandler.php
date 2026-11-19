@@ -17,6 +17,7 @@ use Webpatser\Resonate\Protocols\Pusher\Channels\CacheChannel;
 use Webpatser\Resonate\Protocols\Pusher\Channels\Channel;
 use Webpatser\Resonate\Protocols\Pusher\Concerns\InteractsWithChannelInformation;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
+use Webpatser\Resonate\Protocols\Pusher\Exceptions\ChannelNameTooLong;
 use Webpatser\Resonate\Protocols\Pusher\Exceptions\SubscriptionLimitExceeded;
 use Webpatser\Resonate\Protocols\Pusher\Managers\ArrayChannelManager;
 
@@ -93,6 +94,7 @@ class EventHandler
      * that established the user's identity (released resonate-users calls
      * `handle('pusher:subscribe')` directly) or {@see PluginContext::joinUserChannel()}.
      *
+     * @throws ChannelNameTooLong
      * @throws SubscriptionLimitExceeded
      */
     public function subscribe(Connection $connection, string $channel, ?string $auth = null, ?string $data = null): void
@@ -112,6 +114,7 @@ class EventHandler
      *
      * @internal Used by {@see PluginContext::joinUserChannel()}.
      *
+     * @throws ChannelNameTooLong
      * @throws SubscriptionLimitExceeded
      */
     public function subscribeInternally(Connection $connection, string $channel, ?string $auth = null, ?string $data = null): void
@@ -123,6 +126,13 @@ class EventHandler
 
     /**
      * Validate the fields of a subscribe.
+     *
+     * The payload is validated first, then the name length. An over-long
+     * name is refused with a `pusher:subscription_error` naming the channel
+     * rather than the generic 4200, so the client can tell which subscribe
+     * failed and why.
+     *
+     * @throws ChannelNameTooLong
      */
     protected function validateSubscription(string $channel, ?string $auth, ?string $data): void
     {
@@ -131,10 +141,24 @@ class EventHandler
             'auth' => $auth,
             'channel_data' => $data,
         ], [
-            'channel' => $this->channelNameRules(),
+            'channel' => $this->channelNameRules(withLength: false),
             'auth' => ['nullable', 'string'],
             'channel_data' => ['nullable', 'json'],
         ])->validate();
+
+        $length = $this->maxChannelNameLength();
+
+        if ($length > 0 && mb_strlen($channel) > $length) {
+            throw new ChannelNameTooLong($channel);
+        }
+    }
+
+    /**
+     * Get the configured maximum channel name length, 0 for unlimited.
+     */
+    protected function maxChannelNameLength(): int
+    {
+        return (int) config('reverb.servers.reverb.max_channel_name_length', 255);
     }
 
     /**
@@ -218,15 +242,18 @@ class EventHandler
      * A configured length of 0 disables the length check, and
      * `validate_channel_names` set to false disables the charset check.
      *
+     * A subscribe checks the length itself, after these rules, so it can
+     * answer with a subscription error; `$withLength` leaves it out for that.
+     *
      * @return array<int, string|\Closure>
      */
-    protected function channelNameRules(): array
+    protected function channelNameRules(bool $withLength = true): array
     {
         $rules = ['nullable', 'string', ChannelName::rule()];
 
-        $length = (int) config('reverb.servers.reverb.max_channel_name_length', 255);
+        $length = $this->maxChannelNameLength();
 
-        if ($length > 0) {
+        if ($withLength && $length > 0) {
             $rules[] = 'max:'.$length;
         }
 
@@ -272,7 +299,7 @@ class EventHandler
             }
 
             if (++$subscriptions >= $limit) {
-                throw new SubscriptionLimitExceeded;
+                throw new SubscriptionLimitExceeded($channel);
             }
         }
     }

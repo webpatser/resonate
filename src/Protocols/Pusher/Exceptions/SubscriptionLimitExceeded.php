@@ -2,24 +2,22 @@
 
 namespace Webpatser\Resonate\Protocols\Pusher\Exceptions;
 
-class SubscriptionLimitExceeded extends PusherException
+/**
+ * The connection already holds as many channels as it may.
+ *
+ * Re-subscribing to a channel it already holds never raises this.
+ */
+class SubscriptionLimitExceeded extends SubscriptionError
 {
     /**
-     * The error code associated with the exception.
-     *
-     * The 43xx range means "the request was rejected, do not retry", which is
-     * what this is: the connection stays open and everything it is already
-     * subscribed to keeps working. The 41xx range would tell the client to
-     * reconnect with backoff, which cannot help here.
-     *
-     * @var int
+     * The error type sent to the client.
      */
-    protected $code = 4302;
+    protected string $type = 'LimitReached';
 
     /**
      * The error message associated with the exception.
      *
      * @var string
      */
-    protected $message = 'Subscription limit exceeded';
+    protected $message = 'Connection is over channel quota';
 }

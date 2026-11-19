@@ -2,6 +2,21 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## v1.3.0 - 2026-11-19
+
+### Changed
+
+- Subscription errors now use `pusher:subscription_error`, with a top-level `channel` field naming the requested channel and a string-encoded `data` of `type`, `error` and `status`. The connection stays open and no channel is created.
+  - Over the subscription limit, before: `{"event":"pusher:error","data":"{\"code\":4302,\"message\":\"Subscription limit exceeded\"}"}`. Now: `{"event":"pusher:subscription_error","data":"{\"type\":\"LimitReached\",\"error\":\"Connection is over channel quota\",\"status\":4300}","channel":"<name>"}`.
+  - Channel name too long on subscribe, before: `{"event":"pusher:error","data":"{\"code\":4200,\"message\":\"Invalid message format\"}"}`. Now: `{"event":"pusher:subscription_error","data":"{\"type\":\"InvalidChannelName\",\"error\":\"Channel name is too long\",\"status\":4300}","channel":"<name>"}`.
+  - The subscribe payload is validated first, then the name length, then the limit. Every other invalid message, including an over-long name on unsubscribe, still gets `pusher:error` `4200`.
+  - `SubscriptionLimitExceeded` now extends the new `Protocols\Pusher\Exceptions\SubscriptionError` (code `4300`) and takes the channel name; the new `ChannelNameTooLong` extends it too.
+  - For plugin authors: `PluginContext::joinUserChannel()` now throws `ChannelNameTooLong` instead of `ValidationException` for an over-long channel name, and `SubscriptionLimitExceeded::getCode()` is `4300` instead of `4302`.
+
+### Parity
+
+- Reverb v1.14.0 #423: subscription errors now use the same wire format; limits stay at Resonate's defaults (250 subscriptions, 255 characters)
+
 ## v1.2.1 - 2026-11-19
 
 ### Fixed

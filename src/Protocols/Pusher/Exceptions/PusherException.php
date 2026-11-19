@@ -23,7 +23,7 @@ abstract class PusherException extends Exception
     /**
      * Get the Pusher formatted error payload.
      *
-     * @return array{event: string, data: string|false}
+     * @return array{event: string, data: string|false, channel?: string}
      */
     public function payload(): array
     {
