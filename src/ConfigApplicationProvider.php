@@ -72,8 +72,9 @@ class ConfigApplicationProvider implements ApplicationProvider
             $app['allowed_origins'],
             $app['max_message_size'],
             $app['max_connections'] ?? null,
-            // If no setting is provided, default to allowing all client events...
-            $app['accept_client_events_from'] ?? 'all',
+            // Without a setting, only channel members may send client events,
+            // the same default as Application and config/reverb.php.
+            $app['accept_client_events_from'] ?? 'members',
             $app['rate_limiting'] ?? null,
             $app['options'] ?? [],
         );

@@ -2,6 +2,16 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## v1.2.1 - 2026-11-19
+
+### Fixed
+
+- An app config without an `accept_client_events_from` key now defaults to `'members'` in `ConfigApplicationProvider`, matching `Application` and `config/reverb.php`. It used to fall back to `'all'`. This aligns the provider default with the shipped config; the enforcement site already required private or presence channel membership for both `all` and `members`, so there is no behavior change for client events today.
+
+### Parity
+
+- Reverb v1.14.0 reviewed against upstream main through 2026-11-19: #419 (close connections rejected on open) and #421 (unencodable pub/sub payloads) were already in place since v1.1.1. #420 (dependency updates) needs no change and no `illuminate/*` floor change. #422 (ping and prune connections that never subscribed) was already in place: `Server::open()` registers every admitted connection in the open-connection list that `PingInactiveConnections` and `PruneStaleConnections` walk, covered by `ConnectionAdmissionTest`, `PingInactiveConnectionsTest` and `PruneStaleConnectionsTest`. #423 (subscription errors for the subscription limit and over-long channel names): reviewed, difference noted, no change in this release; Resonate still answers with `pusher:error` (`4302` for the limit, `4200` for the name) instead of `pusher:subscription_error` with `LimitReached` / `InvalidChannelName` and status `4300`, and the defaults of 250 subscriptions and 255 characters are unchanged. #424 (`accept_client_events_from` default) is the fix above; new `ConfigApplicationProviderTest` pins the default.
+
 ## v1.2.0 - 2026-11-18
 
 ### Security
