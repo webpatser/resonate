@@ -12,7 +12,9 @@ use function Fledge\Async\WebSocket\Client\connect;
  * on both event loop drivers. SIGTERM and SIGINT go through the command's
  * signal handler, which defers the stop onto the loop: the listener closes,
  * every client gets a 1001 close frame, the loop stops, the command removes
- * its PID file and the process exits 0.
+ * its PID file and the process exits 0. With clients that answer the close
+ * frame that takes milliseconds; a client that never answers holds the stop
+ * for the WebSocket close period (3 seconds).
  */
 
 beforeEach(function () {
@@ -39,6 +41,8 @@ it('stops gracefully on a signal with clients connected', function (string $driv
         $sent = microtime(true);
         $server->signal($signal);
 
+        // receive() returning null means the close frame arrived; the reply
+        // is written by the loop, which wait() keeps running.
         foreach ($clients as $client) {
             expect($client->receive($deadline))->toBeNull();
         }
@@ -47,7 +51,7 @@ it('stops gracefully on a signal with clients connected', function (string $driv
         $elapsed = microtime(true) - $sent;
 
         expect($exitCode)->toBe(0, $server->log())
-            ->and($elapsed)->toBeLessThan(5.0)
+            ->and($elapsed)->toBeLessThan(1.0)
             ->and(array_map(fn (WebsocketConnection $client) => $client->getCloseInfo()->getCode(), $clients))
             ->each->toBe(WebsocketCloseCode::GOING_AWAY)
             ->and(is_file("{$server->storage}/resonate.pid"))->toBeFalse();
@@ -64,4 +68,44 @@ it('stops gracefully on a signal with clients connected', function (string $driv
 ])->with([
     'SIGTERM' => fn () => SIGTERM,
     'SIGINT' => fn () => SIGINT,
+])->group('integration');
+
+it('waits out the close period for a client that never answers the close, then exits 0', function (string $driver) {
+    $server = ServerProcess::start($driver);
+    $socket = null;
+
+    try {
+        // A raw client outside the loop: it upgrades, then never reads again,
+        // so it never answers the server's close frame.
+        $socket = stream_socket_client("tcp://127.0.0.1:{$server->port}", $errno, $errstr, 5);
+        expect($socket)->not->toBeFalse($errstr);
+
+        fwrite($socket, "GET /app/app-key HTTP/1.1\r\nHost: 127.0.0.1:{$server->port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n");
+        stream_set_timeout($socket, 5);
+
+        $response = '';
+        while (! str_contains($response, 'pusher:connection_established') && ! feof($socket)) {
+            $response .= (string) fread($socket, 8192);
+        }
+
+        expect($response)->toStartWith('HTTP/1.1 101')
+            ->toContain('pusher:connection_established');
+
+        $sent = microtime(true);
+        $server->signal(SIGTERM);
+
+        $exitCode = $server->wait(10.0);
+        $elapsed = microtime(true) - $sent;
+
+        expect($exitCode)->toBe(0, $server->log())
+            ->and($elapsed)->toBeGreaterThan(2.5)
+            ->and($elapsed)->toBeLessThan(5.0);
+    } finally {
+        is_resource($socket) && fclose($socket);
+
+        $server->stop();
+    }
+})->with([
+    'poll' => 'poll',
+    'select' => 'select',
 ])->group('integration');

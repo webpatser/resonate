@@ -4,6 +4,8 @@ namespace Webpatser\Resonate\Tests\Support;
 
 use RuntimeException;
 
+use function Fledge\Async\delay;
+
 /**
  * A `resonate:start` process for the tests that need a real server.
  *
@@ -111,6 +113,10 @@ final class ServerProcess
 
     /**
      * Wait for the child to exit and return its exit code, or null on timeout.
+     *
+     * Polls with the loop's delay(), not usleep(): the loop keeps running
+     * while it waits, so clients in this process still answer the server
+     * (a close handshake, a pong) instead of starving.
      */
     public function wait(float $timeout): ?int
     {
@@ -127,7 +133,7 @@ final class ServerProcess
                 return null;
             }
 
-            usleep(10_000);
+            delay(0.01);
         }
 
         return null;
