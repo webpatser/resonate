@@ -121,13 +121,15 @@ class Factory
      * process on the same port; the kernel routes new accepts to it while the
      * old process drains. With a single listener the flag is a no-op.
      *
-     * TCP_NODELAY is set on the listening socket: accepted sockets inherit it
-     * on Linux and macOS, so it covers TLS connections too, which setting it
-     * per connection after the upgrade could not (the option cannot be set
-     * through a stream that has crypto enabled). Without it every small frame
-     * waits on the kernel's coalescing timer, which is exactly wrong for a
-     * protocol of small, latency-sensitive messages. TCP keep-alive is set
-     * the same way when configured.
+     * TCP_NODELAY goes in as the listener's `tcp_nodelay` context option, and
+     * PHP sets it on every socket it accepts, before any TLS handshake, so it
+     * covers TLS connections too, which setting it per connection after the
+     * upgrade could not (the option cannot be set through a stream that has
+     * crypto enabled). The listening socket itself does not carry it. Without
+     * it every small frame waits on the kernel's coalescing timer, which is
+     * exactly wrong for a protocol of small, latency-sensitive messages. TCP
+     * keep-alive, when configured, is set on the listening socket, and
+     * accepted sockets inherit it.
      */
     public static function bindContext(?BindContext $context = null, mixed $tcpKeepAlive = null): BindContext
     {

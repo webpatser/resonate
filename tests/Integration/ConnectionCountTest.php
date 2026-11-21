@@ -49,7 +49,7 @@ beforeEach(function () {
     }
 
     if (($hard === 'unlimited' || (int) $hard >= DESCRIPTORS)
-        && posix_setrlimit(POSIX_RLIMIT_NOFILE, DESCRIPTORS, $hard === 'unlimited' ? POSIX_RLIM_INFINITY : (int) $hard)) {
+        && posix_setrlimit(POSIX_RLIMIT_NOFILE, DESCRIPTORS, $hard === 'unlimited' ? POSIX_RLIMIT_INFINITY : (int) $hard)) {
         return;
     }
 

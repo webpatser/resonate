@@ -70,6 +70,30 @@ it('stops gracefully on a signal with clients connected', function (string $driv
     'SIGINT' => fn () => SIGINT,
 ])->group('integration');
 
+it('stops promptly on a signal with no clients connected', function (string $driver, int $signal) {
+    $server = ServerProcess::start($driver);
+
+    try {
+        $sent = microtime(true);
+        $server->signal($signal);
+
+        $exitCode = $server->wait(10.0);
+        $elapsed = microtime(true) - $sent;
+
+        expect($exitCode)->toBe(0, $server->log())
+            ->and($elapsed)->toBeLessThan(0.25)
+            ->and(is_file("{$server->storage}/resonate.pid"))->toBeFalse();
+    } finally {
+        $server->stop();
+    }
+})->with([
+    'poll' => 'poll',
+    'select' => 'select',
+])->with([
+    'SIGTERM' => fn () => SIGTERM,
+    'SIGINT' => fn () => SIGINT,
+])->group('integration');
+
 it('waits out the close period for a client that never answers the close, then exits 0', function (string $driver) {
     $server = ServerProcess::start($driver);
     $socket = null;

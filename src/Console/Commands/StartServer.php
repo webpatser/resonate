@@ -57,6 +57,21 @@ class StartServer extends Command implements SignalableCommandInterface
     protected $description = 'Start the Resonate server';
 
     /**
+     * Connections the open file limit is sized for when `connection_limit` is unlimited.
+     */
+    protected const int DEFAULT_CONNECTION_CAPACITY = 4096;
+
+    /**
+     * Descriptors kept free beyond the connections: listener, Redis, database, logs.
+     */
+    protected const int DESCRIPTOR_HEADROOM = 256;
+
+    /**
+     * The highest soft limit the command raises to when the hard limit allows more.
+     */
+    protected const int RAISED_SOFT_LIMIT_CAP = 65536;
+
+    /**
      * The running HTTP server instance.
      */
     protected ?HttpServer $server = null;
@@ -96,6 +111,8 @@ class StartServer extends Command implements SignalableCommandInterface
 
         /** @var array<string, mixed> $config */
         $config = $this->configRepository()->get('reverb.servers.reverb');
+
+        $this->ensureOpenFileLimit(ServerFactory::connectionLimit($config['connection_limit'] ?? null, 'connection_limit'));
 
         $server = $this->server = ServerFactory::make(
             $host = $this->option('host') ?: $config['host'],
@@ -147,13 +164,19 @@ class StartServer extends Command implements SignalableCommandInterface
     }
 
     /**
-     * Install the event loop driver named by the `event_loop` setting.
+     * Install the event loop driver named by `FLEDGE_EVENT_LOOP` or the
+     * `event_loop` setting.
      *
      * `resonate:start` is a single, long-lived process: it neither forks nor
      * daemonizes, and `resonate:reload` starts the replacement as a fresh
      * process. So this is the process's own first setup, and it runs before
-     * anything in the command touches the loop. The setting defaults to
-     * `FLEDGE_EVENT_LOOP`, then `auto`.
+     * anything in the command touches the loop.
+     *
+     * `FLEDGE_EVENT_LOOP` in the process environment wins over the setting:
+     * it is the rollback switch, and an operator reaching for it during an
+     * incident must not need a `config:cache` rebuild first. The setting
+     * itself defaults to that variable, so without a cached config the two
+     * agree; when they differ the command says which one it used.
      *
      * When the loop's driver already is the one asked for (the loop creates
      * its default from `FLEDGE_EVENT_LOOP` too), it is kept. Otherwise the
@@ -164,16 +187,42 @@ class StartServer extends Command implements SignalableCommandInterface
     protected function installEventLoop(): ?Driver
     {
         $setting = $this->configRepository()->get('reverb.servers.reverb.event_loop');
-        $name = is_string($setting) && $setting !== '' ? $setting : null;
+        $configured = is_string($setting) && trim($setting) !== '' ? trim($setting) : null;
+
+        $environment = getenv(DriverFactory::ENV);
+        $environment = is_string($environment) && trim($environment) !== '' ? trim($environment) : null;
+
+        [$name, $source] = $environment !== null
+            ? [$environment, DriverFactory::ENV.' in the environment']
+            : [$configured ?? 'auto', 'servers.reverb.event_loop'];
 
         try {
             $resolved = DriverFactory::resolve($name);
-            $driver = Loop::getDriver();
-        } catch (\InvalidArgumentException|UnsupportedFeatureException $e) {
-            $this->components->error('Invalid event loop driver (servers.reverb.event_loop, FLEDGE_EVENT_LOOP): '.$e->getMessage());
+        } catch (\InvalidArgumentException) {
+            $this->components->error(sprintf(
+                'Invalid event loop driver "%s" from %s; accepted values: auto, poll, select.',
+                $name,
+                $source,
+            ));
+
+            return null;
+        } catch (UnsupportedFeatureException $e) {
+            $this->components->error(sprintf('Cannot use the event loop driver "%s" from %s: %s', $name, $source, $e->getMessage()));
 
             return null;
         }
+
+        if ($environment !== null && $configured !== null && strcasecmp($environment, $configured) !== 0) {
+            $this->components->warn(sprintf(
+                '%s=%s overrides servers.reverb.event_loop=%s (cached config); using the %s driver.',
+                DriverFactory::ENV,
+                $environment,
+                $configured,
+                $resolved,
+            ));
+        }
+
+        $driver = Loop::getDriver();
 
         if ($driver instanceof ($resolved === 'poll' ? PollDriver::class : StreamSelectDriver::class)) {
             return $driver;
@@ -186,6 +235,75 @@ class StartServer extends Command implements SignalableCommandInterface
 
             return null;
         }
+    }
+
+    /**
+     * Make sure the process may open enough descriptors for its connections.
+     *
+     * Every connection holds one descriptor, and the usual soft limit (1024,
+     * also systemd's default) is far below what the poll driver can serve.
+     * The target is the configured `connection_limit`, or 4096 when it is
+     * unlimited, plus headroom for the listener, Redis, the database and logs.
+     * A soft limit below the target is raised as far as the hard limit allows
+     * (up to the hard limit itself), and the command says so; when the hard
+     * limit is too low, or ext-posix is missing, it warns and starts anyway.
+     */
+    protected function ensureOpenFileLimit(int $connectionLimit): void
+    {
+        $wanted = ($connectionLimit === PHP_INT_MAX ? self::DEFAULT_CONNECTION_CAPACITY : $connectionLimit)
+            + self::DESCRIPTOR_HEADROOM;
+
+        $advice = 'Raise it for the server process, for example LimitNOFILE=65536 in its systemd unit or ulimit -n 65536 in the script that starts it.';
+
+        if (! function_exists('posix_getrlimit') || ! function_exists('posix_setrlimit')) {
+            $this->components->warn("Cannot check the open file limit (ext-posix is missing); this server needs about {$wanted} descriptors. {$advice}");
+
+            return;
+        }
+
+        $limits = posix_getrlimit(POSIX_RLIMIT_NOFILE);
+
+        if ($limits === false) {
+            return;
+        }
+
+        [$soft, $hard] = array_values($limits);
+        $soft = $soft === 'unlimited' ? PHP_INT_MAX : (int) $soft;
+        $hardValue = $hard === 'unlimited' ? POSIX_RLIMIT_INFINITY : (int) $hard;
+        $hard = $hard === 'unlimited' ? PHP_INT_MAX : (int) $hard;
+
+        if ($soft >= $wanted) {
+            return;
+        }
+
+        // Up to the hard limit; an unlimited hard limit is not a valid soft
+        // value everywhere (macOS caps it per process), so fall back to the
+        // target itself when the larger value is refused.
+        $raised = null;
+
+        foreach (array_unique([min($hard, self::RAISED_SOFT_LIMIT_CAP), min($hard, $wanted)]) as $candidate) {
+            if ($candidate > $soft && posix_setrlimit(POSIX_RLIMIT_NOFILE, $candidate, $hardValue)) {
+                $raised = $candidate;
+
+                break;
+            }
+        }
+
+        $capacity = $connectionLimit === PHP_INT_MAX ? 'unlimited connections (sized for '.self::DEFAULT_CONNECTION_CAPACITY.')' : "{$connectionLimit} connections";
+        $hardText = $hard === PHP_INT_MAX ? 'unlimited' : (string) $hard;
+
+        if ($raised !== null && $raised >= $wanted) {
+            $this->components->info("Raised the open file limit from {$soft} to {$raised} (hard limit {$hardText}) for {$capacity}.");
+
+            return;
+        }
+
+        $current = $raised ?? $soft;
+
+        $this->components->warn(
+            "The open file limit is {$current} (hard limit {$hardText}), below the {$wanted} descriptors needed for {$capacity}; ".
+            "connections beyond it will be refused. {$advice}"
+        );
     }
 
     /**

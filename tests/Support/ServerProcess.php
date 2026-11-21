@@ -34,9 +34,12 @@ final class ServerProcess
      * Start the server and wait until it publishes its PID file, which it
      * does once the listener is bound.
      *
+     * `$ulimit` is a shell `ulimit` argument list applied to the child before
+     * it starts, for example `-S -n 256`.
+     *
      * @param  array<string, string>  $env
      */
-    public static function start(string $driver, array $env = [], float $timeout = 20.0): self
+    public static function start(string $driver, array $env = [], float $timeout = 20.0, ?string $ulimit = null): self
     {
         $storage = sys_get_temp_dir().'/resonate-server-'.getmypid().'-'.bin2hex(random_bytes(4));
 
@@ -53,6 +56,10 @@ final class ServerProcess
             '-d', 'memory_limit=-1',
             dirname(__DIR__).'/Fixtures/start-server.php',
         ];
+
+        if ($ulimit !== null) {
+            $command = ['/bin/sh', '-c', "ulimit {$ulimit} && exec \"\$@\"", 'sh', ...$command];
+        }
 
         $environment = array_merge(getenv(), [
             'APP_ENV' => 'testing',
