@@ -2,7 +2,7 @@
 
 use Fledge\Async\Redis\RedisException;
 use Fledge\Async\Redis\RedisSubscription;
-use Revolt\EventLoop;
+use Fledge\Loop;
 use Webpatser\Resonate\Scaling\Contracts\PubSubIncomingMessageHandler;
 use Webpatser\Resonate\Scaling\RedisPubSubProvider;
 
@@ -64,9 +64,9 @@ function makeFailingProvider(int $stopAfter = 3): FailingPubSubProvider
  */
 function runLoopUntilIdle(float $seconds = 1.0): void
 {
-    EventLoop::delay($seconds, fn () => EventLoop::getDriver()->stop());
+    Loop::delay($seconds, fn () => Loop::getDriver()->stop());
 
-    EventLoop::run();
+    Loop::run();
 }
 
 it('resubscribes after a failure instead of dying on the first one', function () {

@@ -1,6 +1,6 @@
 <?php
 
-use Revolt\EventLoop;
+use Fledge\Loop;
 use Webpatser\Resonate\Scaling\PusherPubSubIncomingMessageHandler;
 use Webpatser\Resonate\Scaling\RedisPubSubProvider;
 use Webpatser\Resonate\Tests\Fakes\FakeConnection;
@@ -45,12 +45,12 @@ it('delivers a broadcast envelope across the Redis pub/sub transport', function 
 
     $failure = null;
 
-    $watchdog = EventLoop::delay(5.0, function () use (&$failure) {
+    $watchdog = Loop::delay(5.0, function () use (&$failure) {
         $failure = 'timed out waiting for the Redis round-trip';
-        EventLoop::getDriver()->stop();
+        Loop::getDriver()->stop();
     });
 
-    EventLoop::queue(function () use ($provider, &$failure, $watchdog) {
+    Loop::queue(function () use ($provider, &$failure, $watchdog) {
         try {
             $provider->connect();
             delay(0.2); // let the subscribe fiber establish the subscription
@@ -69,13 +69,13 @@ it('delivers a broadcast envelope across the Redis pub/sub transport', function 
         } catch (Throwable $e) {
             $failure = $e->getMessage();
         } finally {
-            EventLoop::cancel($watchdog);
+            Loop::cancel($watchdog);
             $provider->disconnect();
-            EventLoop::getDriver()->stop();
+            Loop::getDriver()->stop();
         }
     });
 
-    EventLoop::run();
+    Loop::run();
 
     expect($failure)->toBeNull()
         ->and($connection->messages)->not->toBeEmpty()

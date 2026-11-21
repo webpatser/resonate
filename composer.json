@@ -1,6 +1,6 @@
 {
     "name": "webpatser/resonate",
-    "description": "Fiber-based WebSocket server: a drop-in replacement for Laravel Reverb, built on fledge-fiber",
+    "description": "Fiber-based WebSocket server for PHP 8.6: a drop-in replacement for Laravel Reverb, built on fledge-fiber",
     "keywords": ["laravel", "websockets", "reverb", "pusher", "fibers", "broadcasting", "fledge"],
     "license": "MIT",
     "type": "library",
@@ -11,20 +11,20 @@
         }
     ],
     "require": {
-        "php": "^8.5",
+        "php": "^8.6",
         "illuminate/cache": "^13.0",
         "illuminate/console": "^13.0",
         "illuminate/contracts": "^13.0",
         "illuminate/support": "^13.0",
-        "revolt/event-loop": "^1.0",
-        "webpatser/fledge-fiber": "^13.38"
+        "webpatser/fledge-fiber": "^13.43.0.3",
+        "webpatser/fledge-loop": "^0.1"
     },
     "require-dev": {
         "larastan/larastan": "^3.10",
         "laravel/pint": "^1.29",
         "laravel/pulse": "^1.0",
-        "orchestra/testbench": "^10.0|^11.0",
-        "pestphp/pest": "^4.0",
+        "orchestra/testbench": "^11.0",
+        "pestphp/pest": "^5.0",
         "phpstan/phpstan": "^2.2",
         "pusher/pusher-php-server": "^7.2"
     },
@@ -46,9 +46,9 @@
         }
     },
     "scripts": {
-        "test": "pest",
+        "test": "@php -d zend.assertions=1 -d assert.exception=1 vendor/bin/pest",
         "lint": "pint --test",
-        "analyse": "phpstan analyse --memory-limit=1G"
+        "analyse": "@php -d memory_limit=-1 vendor/bin/phpstan analyse"
     },
     "config": {
         "sort-packages": true,

@@ -1,7 +1,7 @@
 <?php
 
 use Fledge\Async\WebSocket\Client as WebSocketClient;
-use Revolt\EventLoop;
+use Fledge\Loop;
 use Webpatser\Resonate\Server\Factory;
 
 /**
@@ -18,12 +18,12 @@ it('completes the Pusher connection and public-channel subscribe handshake', fun
     $failure = null;
 
     // Watchdog: never let a broken handshake hang the suite.
-    $watchdog = EventLoop::delay(5.0, function () use (&$failure, $server) {
+    $watchdog = Loop::delay(5.0, function () use (&$failure, $server) {
         $failure = 'timed out waiting for the server round-trip';
         $server->stop();
     });
 
-    EventLoop::queue(function () use ($port, &$received, &$failure, $server, $watchdog) {
+    Loop::queue(function () use ($port, &$received, &$failure, $server, $watchdog) {
         try {
             // Give the accept loop a tick to bind the socket.
             \Fledge\Async\delay(0.1);
@@ -45,7 +45,7 @@ it('completes the Pusher connection and public-channel subscribe handshake', fun
         } catch (Throwable $e) {
             $failure = $e->getMessage();
         } finally {
-            EventLoop::cancel($watchdog);
+            Loop::cancel($watchdog);
             $server->stop();
         }
     });

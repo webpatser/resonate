@@ -2,13 +2,18 @@
 
 namespace Webpatser\Resonate\Console\Commands;
 
+use Fledge\Loop;
+use Fledge\Loop\Driver;
+use Fledge\Loop\Driver\PollDriver;
+use Fledge\Loop\Driver\StreamSelectDriver;
+use Fledge\Loop\DriverFactory;
+use Fledge\Loop\UnsupportedFeatureException;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Support\Facades\Cache;
 use Laravel\Pulse\Pulse;
 use Laravel\Telescope\Contracts\EntriesRepository;
 use Laravel\Telescope\Telescope;
-use Revolt\EventLoop;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\SignalableCommandInterface;
 use Webpatser\Resonate\Application as ResonateApplication;
@@ -66,6 +71,10 @@ class StartServer extends Command implements SignalableCommandInterface
      */
     public function handle(): int
     {
+        if (($driver = $this->installEventLoop()) === null) {
+            return self::FAILURE;
+        }
+
         if (! $this->option('force') && ($runningPid = static::readPid()) !== null) {
             $this->components->error(
                 "A Resonate server is already running (PID: {$runningPid}). ".
@@ -95,11 +104,12 @@ class StartServer extends Command implements SignalableCommandInterface
             $hostname = $this->option('hostname') ?: $config['hostname'],
             $config['max_request_size'] ?? 10_000,
             $config['options'] ?? [],
-            EventLoop::getDriver(),
+            $driver,
             $this->fallbackMessageSize(),
             (int) ($config['max_outbound_queue_size'] ?? RawConnection::DEFAULT_MAX_QUEUE_SIZE),
             ServerFactory::connectionLimit($config['connection_limit'] ?? null, 'connection_limit'),
             ServerFactory::connectionLimit($config['connection_limit_per_ip'] ?? null, 'connection_limit_per_ip'),
+            $config['tcp_keepalive'] ?? null,
         );
 
         $this->scheduler = app(Scheduler::class);
@@ -134,6 +144,48 @@ class StartServer extends Command implements SignalableCommandInterface
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Install the event loop driver named by the `event_loop` setting.
+     *
+     * `resonate:start` is a single, long-lived process: it neither forks nor
+     * daemonizes, and `resonate:reload` starts the replacement as a fresh
+     * process. So this is the process's own first setup, and it runs before
+     * anything in the command touches the loop. The setting defaults to
+     * `FLEDGE_EVENT_LOOP`, then `auto`.
+     *
+     * When the loop's driver already is the one asked for (the loop creates
+     * its default from `FLEDGE_EVENT_LOOP` too), it is kept. Otherwise the
+     * named driver is installed; the loop refuses that once callbacks are
+     * registered, and the command then fails rather than run on a driver
+     * nobody chose.
+     */
+    protected function installEventLoop(): ?Driver
+    {
+        $setting = $this->configRepository()->get('reverb.servers.reverb.event_loop');
+        $name = is_string($setting) && $setting !== '' ? $setting : null;
+
+        try {
+            $resolved = DriverFactory::resolve($name);
+            $driver = Loop::getDriver();
+        } catch (\InvalidArgumentException|UnsupportedFeatureException $e) {
+            $this->components->error('Invalid event loop driver (servers.reverb.event_loop, FLEDGE_EVENT_LOOP): '.$e->getMessage());
+
+            return null;
+        }
+
+        if ($driver instanceof ($resolved === 'poll' ? PollDriver::class : StreamSelectDriver::class)) {
+            return $driver;
+        }
+
+        try {
+            return Loop::install($resolved);
+        } catch (\LogicException $e) {
+            $this->components->error("Cannot install the {$resolved} event loop driver: ".$e->getMessage());
+
+            return null;
+        }
     }
 
     /**
@@ -195,6 +247,8 @@ class StartServer extends Command implements SignalableCommandInterface
             foreach (['connection_limit', 'connection_limit_per_ip'] as $key) {
                 ServerFactory::connectionLimit($this->configRepository()->get("reverb.servers.reverb.{$key}"), $key);
             }
+
+            ServerFactory::keepAlive($this->configRepository()->get('reverb.servers.reverb.tcp_keepalive'));
         } catch (InvalidConfiguration $e) {
             return $e->getMessage();
         }
@@ -232,8 +286,8 @@ class StartServer extends Command implements SignalableCommandInterface
      * Connect the pub/sub provider when horizontal scaling is enabled.
      *
      * `RedisPubSubProvider::connect()` schedules its subscribe fiber on the
-     * ambient Revolt loop, so calling it here (after the server is built but
-     * before `$server->start()` enters `EventLoop::run()`) is enough to have
+     * ambient event loop, so calling it here (after the server is built but
+     * before `$server->start()` enters `Loop::run()`) is enough to have
      * the listener running once the loop starts. When scaling is off the
      * `ServerProvider` binding is absent and this is a no-op.
      */
@@ -380,7 +434,7 @@ class StartServer extends Command implements SignalableCommandInterface
         if (defined('SIGUSR2') && $signal === SIGUSR2) {
             $timeout = (int) ($this->configRepository()->get('reverb.servers.reverb.drain_timeout') ?? 30);
 
-            EventLoop::defer(function () use ($timeout) {
+            Loop::defer(function () use ($timeout) {
                 $this->components->info("Draining the server (timeout: {$timeout}s).");
 
                 $this->scheduler?->cancelAll();
@@ -391,7 +445,7 @@ class StartServer extends Command implements SignalableCommandInterface
             return false;
         }
 
-        EventLoop::defer(function () {
+        Loop::defer(function () {
             $this->components->info('Gracefully stopping the server.');
 
             $this->scheduler?->cancelAll();

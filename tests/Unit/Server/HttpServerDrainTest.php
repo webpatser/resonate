@@ -85,7 +85,7 @@ it('pins the vendor properties drain reflects into', function () {
 /*
  * Regression: drain always burned the full timeout.
  *
- * The watchdog was an unconditional `EventLoop::delay($timeout, ...)` with no
+ * The watchdog was an unconditional `Loop::delay($timeout, ...)` with no
  * early exit, so a deploy on an idle node waited the whole drain_timeout (30s
  * by default) before the process would exit.
  */

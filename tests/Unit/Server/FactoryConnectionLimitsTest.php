@@ -116,9 +116,11 @@ it('keeps Factory::make() limits as optional trailing parameters', function () {
     $parameters = (new ReflectionMethod(Factory::class, 'make'))->getParameters();
     $byName = array_column(array_map(fn (ReflectionParameter $p) => [$p->getName(), $p], $parameters), 1, 0);
 
-    expect(array_slice(array_keys($byName), -2))->toBe(['connectionLimit', 'connectionLimitPerIp'])
+    expect(array_slice(array_keys($byName), -3))->toBe(['connectionLimit', 'connectionLimitPerIp', 'tcpKeepAlive'])
         ->and($byName['connectionLimit']->isOptional())->toBeTrue()
         ->and($byName['connectionLimit']->getDefaultValue())->toBeNull()
         ->and($byName['connectionLimitPerIp']->isOptional())->toBeTrue()
-        ->and($byName['connectionLimitPerIp']->getDefaultValue())->toBeNull();
+        ->and($byName['connectionLimitPerIp']->getDefaultValue())->toBeNull()
+        ->and($byName['tcpKeepAlive']->isOptional())->toBeTrue()
+        ->and($byName['tcpKeepAlive']->getDefaultValue())->toBeNull();
 });

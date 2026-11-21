@@ -75,6 +75,28 @@ return [
             'connection_limit_per_ip' => env('REVERB_CONNECTION_LIMIT_PER_IP'),
 
             /*
+            | The event loop driver of the `resonate:start` process: `auto`
+            | (kqueue or epoll where available, else stream_select), `poll`
+            | or `select`. The poll driver has no descriptor ceiling, so the
+            | number of connections is bounded by the process's open file
+            | limit (`ulimit -n`) instead. `select` is the rollback and cannot
+            | watch descriptors above FD_SETSIZE (usually 1024), which caps a
+            | node at roughly a thousand connections.
+            */
+            'event_loop' => env('FLEDGE_EVENT_LOOP', 'auto'),
+
+            /*
+            | TCP keep-alive on accepted connections. Off by default: the Pusher
+            | protocol already pings clients that go quiet (`ping_interval`) and
+            | the server prunes the ones that stop answering. Turn it on when
+            | something between the client and the server (a NAT, a firewall)
+            | drops idle flows faster than that: true uses the operating
+            | system's timings, a number sets the idle seconds before the first
+            | probe. TCP_NODELAY is always on.
+            */
+            'tcp_keepalive' => env('REVERB_TCP_KEEPALIVE', false),
+
+            /*
             | Resource limits on what a single connection may ask the server to
             | allocate. `max_channel_name_length` bounds the name a client can
             | subscribe to (Pusher itself caps names at 164 characters, so the

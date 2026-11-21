@@ -2,10 +2,10 @@
 
 use Fledge\Async\Http\Server\Driver\Client;
 use Fledge\Async\Http\Server\Request as FledgeRequest;
+use Fledge\Loop;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use League\Uri\Http;
-use Revolt\EventLoop;
 use Webpatser\Resonate\Application;
 use Webpatser\Resonate\ConfigApplicationProvider;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
@@ -52,13 +52,13 @@ uses()->beforeEach(function () {
  */
 function drainLoop(float $timeout = 0.25): void
 {
-    $watchdog = EventLoop::delay($timeout, fn () => EventLoop::getDriver()->stop());
+    $watchdog = Loop::delay($timeout, fn () => Loop::getDriver()->stop());
 
-    EventLoop::unreference($watchdog);
+    Loop::unreference($watchdog);
 
-    EventLoop::run();
+    Loop::run();
 
-    EventLoop::cancel($watchdog);
+    Loop::cancel($watchdog);
 }
 
 /**

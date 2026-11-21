@@ -10,10 +10,10 @@ use Fledge\Async\Stream\Certificate;
 use Fledge\Async\Stream\ServerTlsContext;
 use Fledge\Async\WebSocket\Server\Rfc6455Acceptor;
 use Fledge\Async\WebSocket\Server\Websocket;
+use Fledge\Loop;
+use Fledge\Loop\Driver;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Revolt\EventLoop;
-use Revolt\EventLoop\Driver;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
 use Webpatser\Resonate\Exceptions\InvalidConfiguration;
 use Webpatser\Resonate\Protocols\Pusher\Http\Controllers\ChannelController;
@@ -39,6 +39,11 @@ class Factory
     /**
      * Create a new HTTP server instance.
      *
+     * `$loop` is made the event loop's driver when it is not already; the
+     * `resonate:start` command passes the driver it installed from the
+     * `event_loop` setting. `$tcpKeepAlive` is the `tcp_keepalive` setting,
+     * see {@see keepAlive()}.
+     *
      * @param  array<string, mixed>  $options  The server "options" config (notably `tls`).
      */
     public static function make(
@@ -53,9 +58,10 @@ class Factory
         int $maxOutboundQueueSize = RawConnection::DEFAULT_MAX_QUEUE_SIZE,
         ?int $connectionLimit = null,
         ?int $connectionLimitPerIp = null,
+        mixed $tcpKeepAlive = null,
     ): HttpServer {
-        if ($loop !== null) {
-            EventLoop::setDriver($loop);
+        if ($loop !== null && $loop !== Loop::getDriver()) {
+            Loop::setDriver($loop);
         }
 
         $logger = self::logger();
@@ -67,14 +73,10 @@ class Factory
             self::connectionLimit($connectionLimitPerIp, 'connection_limit_per_ip'),
         );
 
-        $bindContext = self::configureTls($options['tls'] ?? [], $hostname) ?? new BindContext;
-
-        // Always bind with SO_REUSEPORT so `resonate:reload` can spawn a second
-        // process on the same port; the kernel routes new accepts to it while
-        // the old process drains. With a single listener the flag is a no-op.
-        $bindContext = $bindContext->withReusePort();
-
-        $socketServer->expose("{$host}:{$port}", $bindContext);
+        $socketServer->expose(
+            "{$host}:{$port}",
+            self::bindContext(self::configureTls($options['tls'] ?? [], $hostname), $tcpKeepAlive),
+        );
 
         $router = self::makeRouter($path, $socketServer, $logger, $fallbackMessageSize, $maxOutboundQueueSize);
 
@@ -110,6 +112,67 @@ class Factory
                 bodySizeLimit: $maxRequestSize,
             ),
         );
+    }
+
+    /**
+     * Build the listener's bind context.
+     *
+     * Always binds with SO_REUSEPORT so `resonate:reload` can spawn a second
+     * process on the same port; the kernel routes new accepts to it while the
+     * old process drains. With a single listener the flag is a no-op.
+     *
+     * TCP_NODELAY is set on the listening socket: accepted sockets inherit it
+     * on Linux and macOS, so it covers TLS connections too, which setting it
+     * per connection after the upgrade could not (the option cannot be set
+     * through a stream that has crypto enabled). Without it every small frame
+     * waits on the kernel's coalescing timer, which is exactly wrong for a
+     * protocol of small, latency-sensitive messages. TCP keep-alive is set
+     * the same way when configured.
+     */
+    public static function bindContext(?BindContext $context = null, mixed $tcpKeepAlive = null): BindContext
+    {
+        $context = ($context ?? new BindContext)->withReusePort()->withTcpNoDelay();
+
+        return match ($idle = self::keepAlive($tcpKeepAlive)) {
+            false => $context,
+            true => $context->withKeepAlive(),
+            default => $context->withKeepAlive(idle: $idle),
+        };
+    }
+
+    /**
+     * Resolve the `tcp_keepalive` setting.
+     *
+     * Null, false, an empty string and 0 turn TCP keep-alive off (the
+     * default: the Pusher protocol already pings idle clients and prunes the
+     * ones that stop answering). True turns it on with the operating system's
+     * timings; a positive integer turns it on and sets the idle seconds before
+     * the first probe.
+     *
+     * @return bool|positive-int
+     *
+     * @throws InvalidConfiguration
+     */
+    public static function keepAlive(mixed $value): bool|int
+    {
+        if ($value === null || $value === false || $value === '' || $value === 0 || $value === '0') {
+            return false;
+        }
+
+        if ($value === true) {
+            return true;
+        }
+
+        $idle = is_int($value) ? $value : filter_var($value, FILTER_VALIDATE_INT);
+
+        if ($idle === false || $idle < 1) {
+            throw new InvalidConfiguration(sprintf(
+                'Invalid servers.reverb.tcp_keepalive value [%s]: expected false, true, or the idle seconds before the first probe.',
+                is_scalar($value) ? (string) $value : get_debug_type($value),
+            ));
+        }
+
+        return $idle;
     }
 
     /**

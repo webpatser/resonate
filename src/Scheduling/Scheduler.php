@@ -3,18 +3,18 @@
 namespace Webpatser\Resonate\Scheduling;
 
 use Closure;
-use Revolt\EventLoop;
+use Fledge\Loop;
 use Throwable;
 use Webpatser\Resonate\Contracts\Logger;
 
 use function Fledge\Async\async;
 
 /**
- * A thin, resonate-owned scheduler over the Revolt event loop.
+ * A thin, resonate-owned scheduler over the Fledge event loop.
  *
  * Every periodic task the server runs - the restart poll, cyclic GC,
  * connection maintenance, Pulse/Telescope ingest, plugin ticks - is registered
- * here instead of calling {@see EventLoop::repeat()} directly. That gives each
+ * here instead of calling {@see Loop::repeat()} directly. That gives each
  * task the same treatment: its body runs inside a fiber (via `async()`) so
  * async DB/Redis calls suspend rather than block the loop, every run is
  * exception-isolated so a throw can never cancel the timer or crash the loop,
@@ -23,7 +23,7 @@ use function Fledge\Async\async;
 class Scheduler
 {
     /**
-     * The registered tasks, keyed by their Revolt callback id.
+     * The registered tasks, keyed by their loop callback id.
      *
      * @var array<string, array{id: string, name: string, interval: float, type: string}>
      */
@@ -56,7 +56,7 @@ class Scheduler
      * because several distinct tasks legitimately share a name (every plugin
      * tick registers as `plugin:tick`), and those must not block each other.
      *
-     * Returns the Revolt callback id, which can be passed to {@see cancel()}.
+     * Returns the loop callback id, which can be passed to {@see cancel()}.
      */
     public function repeat(float $interval, callable $callback, string $name): string
     {
@@ -65,7 +65,7 @@ class Scheduler
         // Captured by reference: assigned the real callback id below, before the
         // loop can invoke the closure.
         $id = '';
-        $id = EventLoop::repeat($interval, function () use (&$id, $guard, $name): void {
+        $id = Loop::repeat($interval, function () use (&$id, $guard, $name): void {
             if (isset($this->running[$id])) {
                 $this->logger->info(
                     'Scheduler',
@@ -104,7 +104,7 @@ class Scheduler
     /**
      * Register a one-shot task to run once after the given delay.
      *
-     * Returns the Revolt callback id, which can be passed to {@see cancel()}.
+     * Returns the loop callback id, which can be passed to {@see cancel()}.
      */
     public function delay(float $delay, callable $callback, string $name): string
     {
@@ -113,7 +113,7 @@ class Scheduler
         // Captured by reference: assigned the real callback id below, before the
         // loop can invoke the closure.
         $id = '';
-        $id = EventLoop::delay($delay, function () use (&$id, $guard): void {
+        $id = Loop::delay($delay, function () use (&$id, $guard): void {
             unset($this->tasks[$id]);
 
             (void) async($guard);
@@ -129,7 +129,7 @@ class Scheduler
      */
     public function cancel(string $id): void
     {
-        EventLoop::cancel($id);
+        Loop::cancel($id);
 
         unset($this->tasks[$id], $this->running[$id]);
     }
@@ -143,7 +143,7 @@ class Scheduler
     public function cancelAll(): void
     {
         foreach (array_keys($this->tasks) as $id) {
-            EventLoop::cancel($id);
+            Loop::cancel($id);
         }
 
         $this->tasks = [];
@@ -165,7 +165,7 @@ class Scheduler
      *
      * The returned closure is what actually runs on the loop: it never lets a
      * `Throwable` escape, so a failing task can neither cancel its own timer
-     * nor surface as a Revolt uncaught error.
+     * nor surface as an uncaught loop error.
      */
     /**
      * @return Closure(): void

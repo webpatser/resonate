@@ -91,7 +91,7 @@ it('delivers a broadcast to every other subscriber while one is not reading', fu
     $channel->subscribe(fakeSocketConnection($second));
 
     // Reaching the line after this one is itself the assertion: a broadcast
-    // that suspended on the stalled peer would suspend {main}, which Revolt
+    // that suspended on the stalled peer would suspend {main}, which the loop
     // fails outright rather than silently returning.
     $channel->broadcast(['event' => 'update', 'channel' => 'test-channel']);
 

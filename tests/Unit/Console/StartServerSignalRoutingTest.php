@@ -1,7 +1,7 @@
 <?php
 
+use Fledge\Loop;
 use Mockery\MockInterface;
-use Revolt\EventLoop;
 use Webpatser\Resonate\Console\Commands\StartServer;
 use Webpatser\Resonate\Server\HttpServer;
 
@@ -67,9 +67,9 @@ function makeStartServerWithMockHttpServer(MockInterface $http): StartServer
  */
 function drainDeferredCallbacks(): void
 {
-    EventLoop::defer(fn () => EventLoop::getDriver()->stop());
+    Loop::defer(fn () => Loop::getDriver()->stop());
 
-    EventLoop::run();
+    Loop::run();
 }
 
 it('subscribes to SIGINT, SIGTERM, SIGTSTP, and SIGUSR2 on unix', function () {

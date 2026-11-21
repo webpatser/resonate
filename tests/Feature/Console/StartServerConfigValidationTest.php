@@ -64,3 +64,21 @@ it('refuses to start when a trusted proxy entry is not a CIDR range', function (
     expect($exit)->not->toBe(0)
         ->and(Artisan::output())->toContain('trusted_proxies');
 });
+
+it('refuses to start with an unknown event loop driver', function () {
+    $this->app['config']->set('reverb.servers.reverb.event_loop', 'libuv');
+
+    $exit = Artisan::call('resonate:start');
+
+    expect($exit)->not->toBe(0)
+        ->and(Artisan::output())->toContain('libuv');
+});
+
+it('refuses to start with an invalid tcp_keepalive value', function () {
+    $this->app['config']->set('reverb.servers.reverb.tcp_keepalive', 'often');
+
+    $exit = Artisan::call('resonate:start');
+
+    expect($exit)->not->toBe(0)
+        ->and(Artisan::output())->toContain('tcp_keepalive');
+});

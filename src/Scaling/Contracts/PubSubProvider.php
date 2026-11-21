@@ -6,7 +6,7 @@ namespace Webpatser\Resonate\Scaling\Contracts;
  * A pub/sub transport that bridges broadcasts between Resonate instances.
  *
  * Adapted from Reverb's interface: there is no ReactPHP `LoopInterface` (the
- * fledge-fiber Redis client runs on the ambient Revolt loop) and `publish()`
+ * fledge-fiber Redis client runs on the ambient event loop) and `publish()`
  * returns the delivered-subscriber count rather than a `PromiseInterface`,
  * because fledge calls are fiber-blocking, so the fiber suspends, not the loop.
  */

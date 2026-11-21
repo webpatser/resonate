@@ -3,8 +3,8 @@
 namespace Webpatser\Resonate\Protocols\Pusher;
 
 use Fledge\Async\DeferredFuture;
+use Fledge\Loop;
 use Illuminate\Support\Str;
-use Revolt\EventLoop;
 use Webpatser\Resonate\Application;
 use Webpatser\Resonate\Contracts\ServerProvider;
 use Webpatser\Resonate\Protocols\Pusher\Channels\ChannelConnection;
@@ -248,7 +248,7 @@ class MetricsHandler
         // one is a deadlock whenever nothing else is holding the loop open.
         // Completing (rather than cancelling) also means a node that never
         // answers costs the window once and still returns what did arrive.
-        $timeout = EventLoop::delay($this->collectionWindow, fn () => $this->complete($requestId));
+        $timeout = Loop::delay($this->collectionWindow, fn () => $this->complete($requestId));
 
         try {
             $receivers = app(PubSubProvider::class)->publish([
@@ -282,7 +282,7 @@ class MetricsHandler
 
             $sets = $this->pending[$requestId]['sets'];
         } finally {
-            EventLoop::cancel($timeout);
+            Loop::cancel($timeout);
 
             unset($this->pending[$requestId]);
         }

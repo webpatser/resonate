@@ -6,7 +6,6 @@ use Fledge\Async\ForbidCloning;
 use Fledge\Async\ForbidSerialization;
 use Fledge\Async\Http\Server\Request;
 use Fledge\Async\Http\Server\Response;
-use Fledge\Async\Stream\ResourceStream;
 use Fledge\Async\Stream\Socket;
 use Fledge\Async\WebSocket\Compression\WebsocketCompressionContext;
 use Fledge\Async\WebSocket\ConstantRateLimit;
@@ -52,6 +51,10 @@ use Webpatser\Resonate\Server\Concerns\ResolvesApplicationKey;
  * matching the stock factory; only the parser factory varies. Parser factories
  * are memoized per limit because they are stateless and every client of an
  * application can share one.
+ *
+ * TCP_NODELAY is not set here: the listener sets it (see
+ * {@see Factory::bindContext()}) and every accepted socket inherits it,
+ * including TLS ones.
  */
 class ApplicationClientFactory implements WebsocketClientFactory
 {
@@ -91,8 +94,6 @@ class ApplicationClientFactory implements WebsocketClientFactory
         Socket $socket,
         ?WebsocketCompressionContext $compressionContext,
     ): WebsocketClient {
-        $this->enableNoDelay($socket);
-
         return new Rfc6455Client(
             socket: $socket,
             masked: false,
@@ -133,41 +134,5 @@ class ApplicationClientFactory implements WebsocketClientFactory
         return $this->parserFactories[$messageSizeLimit] ??= new Rfc6455ParserFactory(
             messageSizeLimit: $messageSizeLimit,
         );
-    }
-
-    /**
-     * Disable Nagle's algorithm on the upgraded socket.
-     *
-     * Copied from fledge-fiber's `Rfc6455ClientFactory`, which is final and so
-     * cannot be extended to inherit it. Without it every small frame waits on
-     * the kernel's coalescing timer, which is exactly wrong for a protocol of
-     * small, latency-sensitive messages.
-     */
-    protected function enableNoDelay(Socket $socket): void
-    {
-        if (! $socket instanceof ResourceStream) {
-            return;
-        }
-
-        $resource = $socket->getResource();
-
-        // Setting this via the stream API does not work, and the option is not
-        // supported once TLS is enabled on the stream.
-        $supported = is_resource($resource)
-            && ! isset(stream_get_meta_data($resource)['crypto'])
-            && extension_loaded('sockets')
-            && defined('TCP_NODELAY');
-
-        if (! $supported || ! ($sock = socket_import_stream($resource))) {
-            return;
-        }
-
-        set_error_handler(static fn () => true);
-
-        try {
-            socket_set_option($sock, SOL_TCP, TCP_NODELAY, 1);
-        } finally {
-            restore_error_handler();
-        }
     }
 }

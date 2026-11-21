@@ -8,8 +8,8 @@ use Fledge\Async\Http\Server\ErrorHandler;
 use Fledge\Async\Http\Server\HttpServerStatus;
 use Fledge\Async\Http\Server\RequestHandler;
 use Fledge\Async\Http\Server\SocketHttpServer;
+use Fledge\Loop;
 use ReflectionObject;
-use Revolt\EventLoop;
 use Throwable;
 use Webpatser\Resonate\Loggers\Log;
 
@@ -17,7 +17,7 @@ use Webpatser\Resonate\Loggers\Log;
  * Thin wrapper around the fledge-fiber HTTP server.
  *
  * Equivalent to Reverb's Http\Server, but the underlying transport is the
- * fledge-fiber {@see SocketHttpServer} driven by the Revolt event loop instead
+ * fledge-fiber {@see SocketHttpServer} driven by the Fledge event loop instead
  * of a ReactPHP socket server.
  */
 class HttpServer
@@ -52,12 +52,12 @@ class HttpServer
     protected float $drainPollInterval = 0.1;
 
     /**
-     * Revolt callback id of the drain watchdog, if a drain is in progress.
+     * Loop callback id of the drain watchdog, if a drain is in progress.
      */
     protected ?string $drainWatchdog = null;
 
     /**
-     * Revolt callback id of the drain completion poller, if one is running.
+     * Loop callback id of the drain completion poller, if one is running.
      */
     protected ?string $drainPoller = null;
 
@@ -105,7 +105,7 @@ class HttpServer
     /**
      * Start the HTTP server and run the event loop.
      *
-     * fledge-fiber's start() queues the accept loops onto the Revolt event
+     * fledge-fiber's start() queues the accept loops onto the Fledge event
      * loop and returns immediately, so the loop must then be run to actually
      * serve connections. This call blocks until the loop is stopped.
      */
@@ -118,7 +118,7 @@ class HttpServer
         }
 
         try {
-            EventLoop::run();
+            Loop::run();
         } catch (Throwable $e) {
             Log::error($e->getMessage());
         }
@@ -133,7 +133,7 @@ class HttpServer
             $this->server->stop();
         }
 
-        EventLoop::queue(static fn () => EventLoop::getDriver()->stop());
+        Loop::queue(static fn () => Loop::getDriver()->stop());
     }
 
     /**
@@ -179,9 +179,9 @@ class HttpServer
             return;
         }
 
-        $this->drainWatchdog = EventLoop::delay($timeout, fn () => $this->finishDrain());
+        $this->drainWatchdog = Loop::delay($timeout, fn () => $this->finishDrain());
 
-        $this->drainPoller = EventLoop::repeat($this->drainPollInterval, function (): void {
+        $this->drainPoller = Loop::repeat($this->drainPollInterval, function (): void {
             $active = $this->activeClientCount();
 
             if ($active === null) {
@@ -224,7 +224,7 @@ class HttpServer
     protected function cancelDrainWatcher(?string $id): void
     {
         if ($id !== null) {
-            EventLoop::cancel($id);
+            Loop::cancel($id);
         }
     }
 
@@ -302,7 +302,7 @@ class HttpServer
         } catch (Throwable $e) {
             Log::error($e->getMessage());
         } finally {
-            EventLoop::getDriver()->stop();
+            Loop::getDriver()->stop();
         }
     }
 }

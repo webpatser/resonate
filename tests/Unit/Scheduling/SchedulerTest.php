@@ -1,6 +1,6 @@
 <?php
 
-use Revolt\EventLoop;
+use Fledge\Loop;
 use Webpatser\Resonate\Scheduling\Scheduler;
 use Webpatser\Resonate\Tests\Fakes\RecordingLogger;
 
@@ -10,7 +10,7 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    // The Revolt loop is process-global; drop any task this test left behind.
+    // The event loop is process-global; drop any task this test left behind.
     $this->scheduler->cancelAll();
 });
 
@@ -62,8 +62,8 @@ it('isolates a throwing task and keeps the timer alive', function () {
         throw new RuntimeException('boom');
     }, 'flaky');
 
-    EventLoop::delay(0.1, static fn () => EventLoop::getDriver()->stop());
-    EventLoop::run();
+    Loop::delay(0.1, static fn () => Loop::getDriver()->stop());
+    Loop::run();
 
     expect(count($this->logger->errors))->toBeGreaterThanOrEqual(2)
         ->and($this->logger->errors[0])->toContain('Scheduled task [flaky] failed: boom');
@@ -87,13 +87,13 @@ it('skips a tick while the previous run of the same task is still pending', func
     // must be skipped rather than starting a second run.
     $id = $this->scheduler->repeat(0.01, function () use (&$started, &$finished, &$suspension): void {
         $started++;
-        $suspension = EventLoop::getSuspension();
+        $suspension = Loop::getSuspension();
         $suspension->suspend();
         $finished++;
     }, 'slow:sweep');
 
-    EventLoop::delay(0.15, static fn () => EventLoop::getDriver()->stop());
-    EventLoop::run();
+    Loop::delay(0.15, static fn () => Loop::getDriver()->stop());
+    Loop::run();
 
     expect($started)->toBe(1)
         ->and($finished)->toBe(0)
@@ -106,8 +106,8 @@ it('skips a tick while the previous run of the same task is still pending', func
     // tick starts a fresh run instead of staying wedged forever.
     $suspension->resume();
 
-    EventLoop::delay(0.05, static fn () => EventLoop::getDriver()->stop());
-    EventLoop::run();
+    Loop::delay(0.05, static fn () => Loop::getDriver()->stop());
+    Loop::run();
 
     expect($finished)->toBe(1)
         ->and($started)->toBeGreaterThan(1);
@@ -122,8 +122,8 @@ it('releases the guard when a run throws so the task is not wedged forever', fun
         throw new RuntimeException('boom');
     }, 'flaky');
 
-    EventLoop::delay(0.1, static fn () => EventLoop::getDriver()->stop());
-    EventLoop::run();
+    Loop::delay(0.1, static fn () => Loop::getDriver()->stop());
+    Loop::run();
 
     expect($runs)->toBeGreaterThan(1)
         ->and($this->scheduler->isRunning($id))->toBeFalse();
@@ -137,7 +137,7 @@ it('guards each registration separately so tasks sharing a name do not block eac
 
     $this->scheduler->repeat(0.01, function () use (&$runs, &$suspension): void {
         $runs[0]++;
-        $suspension = EventLoop::getSuspension();
+        $suspension = Loop::getSuspension();
         $suspension->suspend();
     }, 'plugin:tick');
 
@@ -145,8 +145,8 @@ it('guards each registration separately so tasks sharing a name do not block eac
         $runs[1]++;
     }, 'plugin:tick');
 
-    EventLoop::delay(0.15, static fn () => EventLoop::getDriver()->stop());
-    EventLoop::run();
+    Loop::delay(0.15, static fn () => Loop::getDriver()->stop());
+    Loop::run();
 
     expect($runs[0])->toBe(1)
         ->and($runs[1])->toBeGreaterThan(1);
@@ -161,8 +161,8 @@ it('runs a one-shot task once and then forgets it', function () {
         $runs++;
     }, 'once');
 
-    EventLoop::delay(0.1, static fn () => EventLoop::getDriver()->stop());
-    EventLoop::run();
+    Loop::delay(0.1, static fn () => Loop::getDriver()->stop());
+    Loop::run();
 
     expect($runs)->toBe(1)
         ->and($this->scheduler->tasks())->toBeEmpty();

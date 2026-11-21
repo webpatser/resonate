@@ -2,14 +2,14 @@
 
 namespace Webpatser\Resonate\Plugins\Contracts;
 
-use Revolt\EventLoop;
+use Fledge\Loop;
 use Webpatser\Resonate\Scheduling\Scheduler;
 
 /**
  * A plugin capability that registers periodic callbacks on the server event loop.
  *
  * Each registered tick is scheduled through the {@see Scheduler}, which builds
- * on {@see EventLoop::repeat()} and runs the body inside a fiber, so async
+ * on {@see Loop::repeat()} and runs the body inside a fiber, so async
  * DB/Redis calls suspend the fiber rather than blocking the loop.
  */
 interface TickScheduler

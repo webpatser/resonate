@@ -11,7 +11,12 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    name: PHP 8.5 / Laravel 13
+    name: PHP 8.6 / Laravel 13 / ${{ matrix.event-loop || 'auto' }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        event-loop: ['', poll, select]
 
     services:
       redis:
@@ -31,9 +36,10 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.5'
+          php-version: '8.6'
           coverage: none
           tools: composer:v2
+          ini-values: zend.assertions=1, assert.exception=1
 
       - name: Get composer cache directory
         id: composer-cache
@@ -56,7 +62,9 @@ jobs:
         run: ./vendor/bin/pint --test
 
       - name: Run static analysis
-        run: ./vendor/bin/phpstan analyse --no-progress
+        run: php -d memory_limit=-1 vendor/bin/phpstan analyse --no-progress
 
       - name: Run tests
-        run: ./vendor/bin/pest
+        run: php -d zend.assertions=1 -d assert.exception=1 vendor/bin/pest
+        env:
+          FLEDGE_EVENT_LOOP: ${{ matrix.event-loop }}
