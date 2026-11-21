@@ -1,16 +1,18 @@
 # Resonate
 
-Fiber-based drop-in replacement for Laravel Reverb, built on `webpatser/fledge-fiber` and PHP 8.5+.
+Fiber-based drop-in replacement for Laravel Reverb, built on `webpatser/fledge-fiber` and PHP 8.6.
 
 ## Why
 
-Reverb is already async, but it pulls in its own ReactPHP / Ratchet / clue-redis stack. Resonate consolidates the runtime onto Fledge: Revolt + `webpatser/fledge-fiber`, the same async stack that powers `webpatser/torque`, `webpatser/laravel-fiber`, and `webpatser/laravel-resp3-cache`. The wins are practical:
+Reverb is already async, but it pulls in its own ReactPHP / Ratchet / clue-redis stack. Resonate consolidates the runtime onto Fledge: `webpatser/fledge-loop` + `webpatser/fledge-fiber`, the same async stack that powers `webpatser/torque`, `webpatser/laravel-fiber`, and `webpatser/laravel-resp3-cache`. The wins are practical:
 
-- **PHP 8.5 only.** No polyfills, no `version_compare`, native URI parser, native `array_all` / `array_any`.
+- **PHP 8.6 only.** No polyfills, no `version_compare`, native URI parser, native `array_all` / `array_any`.
 - **One async runtime per app.** Fledge's HTTP server gives HTTP/2 and shares the loop with the rest of your async work, with no second event loop competing for the request.
 - **Fiber ergonomics.** Channel auth, application providers, and pub/sub callbacks read like synchronous code but yield on I/O. Custom auth backends can hit a database or HTTP API without blocking the tick.
 
 The wire protocol, REST API, and config schema are byte-compatible with Laravel Reverb.
+
+Fledge's async layer started as a port of [amphp](https://amphp.org) and its event loop as a port of [Revolt](https://revolt.run), both MIT licensed. Those projects showed how far fibers can take PHP, and Fledge builds on that work. Fledge has since gone its own way: PHP 8.6 only, shaped around Laravel, and maintained independently, so it does not track either project.
 
 ## Install (fresh app)
 
@@ -66,6 +68,22 @@ Tune the drain window with `REVERB_DRAIN_TIMEOUT` (default `30` seconds). Existi
 `resonate:reload` reads the metadata file so a replacement inherits the CLI overrides the running server was started with, rather than falling back to config. Metadata belonging to another PID is ignored.
 
 A second `resonate:start` fails while the PID file names a live process, since `SO_REUSEPORT` would otherwise let it bind the same port and split the node into two processes with separate channel state. Pass `--force` to start anyway; `resonate:reload` passes it during a swap.
+
+## Event loop and connection count
+
+`resonate:start` runs as one long-lived process. Before it builds the server it installs the event loop driver named by `servers.reverb.event_loop`, which reads `FLEDGE_EVENT_LOOP`:
+
+| `FLEDGE_EVENT_LOOP` | Driver |
+|---|---|
+| `auto` (default, also when unset) | kqueue (macOS, BSD) or epoll (Linux) through PHP's `Io\Poll`; `stream_select` where neither exists |
+| `poll` | kqueue or epoll; the server refuses to start when neither is available |
+| `select` | `stream_select`, the rollback |
+
+With the poll driver a node is no longer capped at about a thousand connections: `stream_select` cannot watch a descriptor above FD_SETSIZE (usually 1024), kqueue and epoll have no such ceiling. Every connection costs one descriptor, so the limit becomes the process's open file limit. Raise it for the server process, for example `LimitNOFILE=65536` in a systemd unit or `ulimit -n 65536` in the script that starts it. Any other value of `FLEDGE_EVENT_LOOP` makes `resonate:start` refuse to boot.
+
+TCP_NODELAY is set on the listening socket, so every accepted connection, TLS included, sends small frames at once. TCP keep-alive is off by default, since the Pusher protocol already pings quiet clients (`ping_interval`) and prunes the ones that stop answering; set `REVERB_TCP_KEEPALIVE=true` (operating system timings) or a number of idle seconds (`REVERB_TCP_KEEPALIVE=60`) when a NAT or firewall drops idle flows sooner.
+
+SIGTERM and SIGINT stop the server gracefully: the listener closes, every client gets a `1001` close frame, the PID file is removed and the process exits `0`. SIGUSR2 drains instead (see above).
 
 ## Resource limits
 
@@ -161,8 +179,12 @@ See [`docs/plugins.md`](docs/plugins.md) for the same list with framing notes, p
 
 ## Requirements
 
-- PHP `^8.5`
+- PHP `^8.6`
 - Laravel `^13.0`
+
+## PHP version policy
+
+This package supports only the latest stable PHP release. When a new PHP version is released, the next release of this package requires it and support for the previous PHP version ends. Currently: PHP 8.6.
 
 Optional integrations:
 

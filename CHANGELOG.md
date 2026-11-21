@@ -2,6 +2,26 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## v1.4.0 - Unreleased
+
+### Changed
+
+- **PHP 8.6 required.** The floor moves from `^8.5` to `^8.6`, following the PHP version policy in the README: Resonate supports only the latest stable PHP release.
+- **BREAKING: `webpatser/fledge-loop` replaces `revolt/event-loop`.** Resonate and `webpatser/fledge-fiber` 13.43.0.3 now run on Fledge's own event loop. The facade is `Fledge\Loop` (was `Revolt\EventLoop`) and its types live under `Fledge\Loop\*` (was `Revolt\EventLoop\*`); there is no alias layer. Code that calls `Revolt\EventLoop` in a plugin or a host app must switch to `Fledge\Loop`, and `revolt/event-loop` can no longer be installed next to Resonate.
+- **BREAKING: `Server\Factory::make()`'s `$loop` parameter is now `?Fledge\Loop\Driver`** (was `?Revolt\EventLoop\Driver`). The driver is only installed when it is not already the loop's driver. A new trailing `$tcpKeepAlive` parameter carries the `tcp_keepalive` setting.
+- `resonate:start` installs its event loop driver with `Fledge\Loop::install()` as the process's first setup, from the new `servers.reverb.event_loop` setting (`FLEDGE_EVENT_LOOP`: `auto`, `poll` or `select`, default `auto`). An unknown value, or `poll` where neither kqueue nor epoll exists, makes the command refuse to start with an error.
+- **No more 1024 connection ceiling.** On the poll driver (kqueue on macOS and BSD, epoll on Linux, the `auto` default on both) the server is no longer limited by `stream_select`'s FD_SETSIZE: a node holds as many connections as its open file limit allows. `FLEDGE_EVENT_LOOP=select` is the rollback and keeps the old limit. A new integration test holds 1,100 WebSocket clients open against a real `resonate:start` process and reaches every one with a broadcast.
+- **TCP_NODELAY at the listener.** It is set on the listening socket and inherited by every accepted socket, so it now covers TLS connections too. It used to be set per connection through `socket_import_stream()`, which did not work once TLS was enabled. `ApplicationClientFactory::enableNoDelay()` is removed.
+
+### Added
+
+- `servers.reverb.tcp_keepalive` (`REVERB_TCP_KEEPALIVE`), off by default: `true` turns TCP keep-alive on with the operating system's timings, a number sets the idle seconds before the first probe. An invalid value makes `resonate:start` refuse to boot. `Server\Factory::bindContext()` and `Server\Factory::keepAlive()` build and validate the listener options.
+- Subprocess tests for graceful shutdown: SIGTERM and SIGINT stop a real `resonate:start` process with clients connected on both event loop drivers; the clients get a `1001` close, the PID file is removed and the process exits `0`.
+
+### Development
+
+- Pest 5 (PHPUnit 13) and Orchestra Testbench 11. `composer test` and CI run with `zend.assertions=1` and `assert.exception=1`, and CI runs the suite with `FLEDGE_EVENT_LOOP` unset, `poll` and `select` on PHP 8.6. PHPStan runs without a memory limit.
+
 ## v1.3.0 - 2026-11-19
 
 ### Changed
