@@ -42,7 +42,7 @@ That's it. Nothing else changes:
 
 `resonate:restart` is the legacy hard restart: it sets the `laravel:reverb:restart` cache key, the running server picks it up within 5 seconds, calls `stop()`, and your supervisor respawns it. WebSocket connections drop; the listener is gone for the 0-5 second window between exit and respawn. Fine for development, rough for production deploys.
 
-`resonate:reload` is the production path. The listener is bound with `SO_REUSEPORT` so the new process can hold the port while the old one drains.
+`resonate:reload` is the production path. The listener is bound with `SO_REUSEPORT` so the new process can hold the port while the old one drains. On Linux, connections still waiting in the old listener's accept backlog when it closes are reset unless `net.ipv4.tcp_migrate_req=1` is set, which hands them to the new listener.
 
 ```bash
 # Default: spawn a replacement, wait for /up, then drain the old PID.
@@ -79,7 +79,9 @@ A second `resonate:start` fails while the PID file names a live process, since `
 | `poll` | kqueue or epoll; the server refuses to start when neither is available |
 | `select` | `stream_select`, the rollback |
 
-With the poll driver a node is no longer capped at about a thousand connections: `stream_select` cannot watch a descriptor above FD_SETSIZE (usually 1024), kqueue and epoll have no such ceiling. Every connection costs one descriptor, so the limit becomes the process's open file limit. Raise it for the server process, for example `LimitNOFILE=65536` in a systemd unit or `ulimit -n 65536` in the script that starts it. Any other value of `FLEDGE_EVENT_LOOP` makes `resonate:start` refuse to boot.
+With the poll driver a node is no longer capped at about a thousand connections: `stream_select` cannot watch a descriptor above FD_SETSIZE (usually 1024), kqueue and epoll have no such ceiling. Every connection costs one descriptor, so the limit becomes the process's open file limit. Raise it for the server process, for example `LimitNOFILE=65536` in a systemd unit or `ulimit -n 65536` in the script that starts it. Any other value of `FLEDGE_EVENT_LOOP` makes `resonate:start` refuse to boot. `FLEDGE_EVENT_LOOP` in the process environment wins over the setting, so `FLEDGE_EVENT_LOOP=select` rolls back even with a cached config (`config:cache`); the command logs one line when the two differ.
+
+At startup `resonate:start` checks the soft open file limit against what it needs: the `connection_limit` setting, or 4096 connections when it is unlimited, plus 256 descriptors for the listener, Redis, the database and logs. A lower soft limit is raised as far as the hard limit allows (up to 65536) and the command says so; when the hard limit is too low it prints a warning with the numbers. Raise the hard limit for large nodes.
 
 TCP_NODELAY is set on the listening socket, so every accepted connection, TLS included, sends small frames at once. TCP keep-alive is off by default, since the Pusher protocol already pings quiet clients (`ping_interval`) and prunes the ones that stop answering; set `REVERB_TCP_KEEPALIVE=true` (operating system timings) or a number of idle seconds (`REVERB_TCP_KEEPALIVE=60`) when a NAT or firewall drops idle flows sooner.
 

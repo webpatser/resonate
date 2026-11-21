@@ -2,7 +2,7 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
-## v1.4.0 - Unreleased
+## v1.4.0 - 2026-11-21
 
 ### Changed
 
@@ -11,12 +11,15 @@ All notable changes to `webpatser/resonate` are documented here.
 - **BREAKING: `Server\Factory::make()`'s `$loop` parameter is now `?Fledge\Loop\Driver`** (was `?Revolt\EventLoop\Driver`). The driver is only installed when it is not already the loop's driver. A new trailing `$tcpKeepAlive` parameter carries the `tcp_keepalive` setting.
 - `resonate:start` installs its event loop driver with `Fledge\Loop::install()` as the process's first setup, from the new `servers.reverb.event_loop` setting (`FLEDGE_EVENT_LOOP`: `auto`, `poll` or `select`, default `auto`). An unknown value, or `poll` where neither kqueue nor epoll exists, makes the command refuse to start with an error.
 - **No more 1024 connection ceiling.** On the poll driver (kqueue on macOS and BSD, epoll on Linux, the `auto` default on both) the server is no longer limited by `stream_select`'s FD_SETSIZE: a node holds as many connections as its open file limit allows. `FLEDGE_EVENT_LOOP=select` is the rollback and keeps the old limit. A new integration test holds 1,100 WebSocket clients open against a real `resonate:start` process and reaches every one with a broadcast.
-- **TCP_NODELAY at the listener.** It is set on the listening socket and inherited by every accepted socket, so it now covers TLS connections too. It used to be set per connection through `socket_import_stream()`, which did not work once TLS was enabled. `ApplicationClientFactory::enableNoDelay()` is removed.
+- **TCP_NODELAY from the listener.** It is passed as the listener's `tcp_nodelay` context option, and PHP sets it on every accepted socket before any TLS handshake, so it now covers TLS connections too. It used to be set per connection through `socket_import_stream()`, which did not work once TLS was enabled.
+- **BREAKING: the protected `ApplicationClientFactory::enableNoDelay()` is removed.** A subclass that calls or overrides it fails; TCP_NODELAY now comes from the listener's bind context, see `Server\Factory::bindContext()` (`BindContext::withTcpNoDelay()`).
+- `FLEDGE_EVENT_LOOP` set in the process environment wins over `servers.reverb.event_loop`, so the `select` rollback works with a cached config; when the two differ, `resonate:start` says which one it used. An invalid value names its source and the accepted values (`auto`, `poll`, `select`).
+- `resonate:start` raises a soft open file limit that is too low for its connections (the configured `connection_limit`, or 4096 when unlimited, plus 256 descriptors of headroom) as far as the hard limit allows, up to 65536, and says so. When the hard limit is too low, or ext-posix is missing, it warns with the numbers and how to raise it.
 
 ### Added
 
 - `servers.reverb.tcp_keepalive` (`REVERB_TCP_KEEPALIVE`), off by default: `true` turns TCP keep-alive on with the operating system's timings, a number sets the idle seconds before the first probe. An invalid value makes `resonate:start` refuse to boot. `Server\Factory::bindContext()` and `Server\Factory::keepAlive()` build and validate the listener options.
-- Subprocess tests for graceful shutdown: SIGTERM and SIGINT stop a real `resonate:start` process with clients connected on both event loop drivers; the clients get a `1001` close, the PID file is removed and the process exits `0`.
+- Subprocess tests for graceful shutdown: SIGTERM and SIGINT stop a real `resonate:start` process, with and without clients connected, on both event loop drivers; the clients get a `1001` close, the PID file is removed and the process exits `0`. A client that never answers the close holds the stop for the 3 second close period. Another subprocess test covers the open file limit raise and warning.
 
 ### Development
 
