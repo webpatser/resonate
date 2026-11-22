@@ -2,7 +2,7 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
-## v1.4.0 - 2026-11-21
+## v1.4.0 - 2026-11-22
 
 ### Changed
 
