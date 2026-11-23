@@ -18,10 +18,18 @@ beforeEach(function () {
     @mkdir(dirname(StartServer::runtimeFilePath()), 0755, true);
 
     cleanupRuntimeFile();
+
+    // Tests start without the Supervisor marker, whatever the runner has set.
+    $this->supervisorEnv = getenv(StartServer::SUPERVISOR_ENV);
+    putenv(StartServer::SUPERVISOR_ENV);
 });
 
 afterEach(function () {
     cleanupRuntimeFile();
+
+    putenv($this->supervisorEnv === false
+        ? StartServer::SUPERVISOR_ENV
+        : StartServer::SUPERVISOR_ENV.'='.$this->supervisorEnv);
 });
 
 function cleanupRuntimeFile(): void
@@ -56,6 +64,7 @@ it('writes the effective host, port and path atomically', function () {
         'host' => '127.0.0.1',
         'port' => 9001,
         'path' => '/ws',
+        'supervised' => false,
     ])->and(file_exists(StartServer::runtimeFilePath().'.'.getmypid().'.tmp'))->toBeFalse();
 });
 
@@ -126,6 +135,50 @@ it('publishes the PID file and the metadata together', function () {
     } finally {
         @unlink(StartServer::pidFilePath());
     }
+});
+
+/*
+ * `resonate:reload` must not spawn a replacement outside Supervisor, so the
+ * server records whether Supervisor started it. The reload process cannot tell
+ * on its own: a deploy script does not carry SUPERVISOR_ENABLED.
+ */
+it('records supervised when SUPERVISOR_ENABLED is set', function () {
+    putenv(StartServer::SUPERVISOR_ENV.'=1');
+
+    invokeRuntimeMethod('publishRuntimeState', ['127.0.0.1', 9001, '/ws']);
+
+    try {
+        expect(StartServer::readRuntime(getmypid())['supervised'] ?? null)->toBeTrue();
+    } finally {
+        @unlink(StartServer::pidFilePath());
+    }
+});
+
+it('records not supervised when SUPERVISOR_ENABLED is missing or blank', function () {
+    invokeRuntimeMethod('publishRuntimeState', ['127.0.0.1', 9001, '/ws']);
+
+    try {
+        expect(StartServer::readRuntime(getmypid())['supervised'] ?? null)->toBeFalse();
+
+        putenv(StartServer::SUPERVISOR_ENV.'=  ');
+        invokeRuntimeMethod('publishRuntimeState', ['127.0.0.1', 9001, '/ws']);
+
+        expect(StartServer::readRuntime(getmypid())['supervised'] ?? null)->toBeFalse();
+    } finally {
+        @unlink(StartServer::pidFilePath());
+    }
+});
+
+it('readRuntime treats metadata without the supervised key as not supervised', function () {
+    // Written by a server from before the key existed.
+    file_put_contents(StartServer::runtimeFilePath(), json_encode([
+        'pid' => getmypid(),
+        'host' => '127.0.0.1',
+        'port' => 9001,
+        'path' => '',
+    ]));
+
+    expect(StartServer::readRuntime(getmypid())['supervised'] ?? null)->toBeFalse();
 });
 
 it('registers publication as an onListening callback instead of running it at boot', function () {

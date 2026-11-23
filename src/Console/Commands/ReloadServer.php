@@ -23,6 +23,12 @@ use Webpatser\Resonate\Server\Factory;
  * With `--drain` the spawn step is skipped and only the SIGUSR2 is sent, which
  * is the right shape when an external supervisor (systemd, k8s, Supervisor)
  * already brings up the replacement process.
+ *
+ * A server started under Supervisor records that in its runtime file, and a
+ * reload without `--drain` then switches to drain-only by itself: a spawned
+ * replacement would run outside Supervisor, which would put the program into
+ * FATAL once the old process exits. The flag is read from the runtime file,
+ * never from this process's environment.
  */
 #[AsCommand(name: 'resonate:reload')]
 class ReloadServer extends Command
@@ -90,11 +96,18 @@ class ReloadServer extends Command
 
         ['host' => $host, 'port' => $port, 'path' => $path] = $this->serverOptions($oldPid);
 
+        $runtime = StartServer::readRuntime($oldPid);
+        $supervised = $runtime !== null && $runtime['supervised'];
+
         $drainTimeout = max(0, (int) $this->option('timeout'));
         $termTimeout = max(0, (int) $this->option('term-timeout'));
         $healthTimeout = max(1, (int) $this->option('health-timeout'));
 
-        if ($this->option('drain')) {
+        if ($supervised && ! $this->option('drain')) {
+            $this->components->info('Server runs under Supervisor; switching to drain-only, Supervisor starts the replacement.');
+        }
+
+        if ($this->option('drain') || $supervised) {
             $this->components->info("Draining Resonate server (PID: {$oldPid}).");
 
             return $this->waitForExit($oldPid, $drainTimeout, $termTimeout);

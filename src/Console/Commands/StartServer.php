@@ -72,6 +72,15 @@ class StartServer extends Command implements SignalableCommandInterface
     protected const int RAISED_SOFT_LIMIT_CAP = 65536;
 
     /**
+     * The environment variable Supervisor sets for every process it manages.
+     *
+     * Recorded in the runtime file so `resonate:reload` knows not to spawn a
+     * replacement outside Supervisor; the reload process itself (a deploy
+     * script, an operator shell) does not have it.
+     */
+    public const string SUPERVISOR_ENV = 'SUPERVISOR_ENABLED';
+
+    /**
      * The running HTTP server instance.
      */
     protected ?HttpServer $server = null;
@@ -617,7 +626,10 @@ class StartServer extends Command implements SignalableCommandInterface
      * shape, or (when `$expectedPid` is given) when it describes a different
      * process than the one we are about to act on.
      *
-     * @return array{pid: int, host: string, port: int, path: string}|null
+     * `supervised` is false when the key is missing, so a file written by an
+     * older server keeps the spawning reload behaviour.
+     *
+     * @return array{pid: int, host: string, port: int, path: string, supervised: bool}|null
      */
     public static function readRuntime(?int $expectedPid = null): ?array
     {
@@ -650,7 +662,18 @@ class StartServer extends Command implements SignalableCommandInterface
             'host' => (string) $decoded['host'],
             'port' => (int) $decoded['port'],
             'path' => (string) ($decoded['path'] ?? ''),
+            'supervised' => ($decoded['supervised'] ?? false) === true,
         ];
+    }
+
+    /**
+     * Determine whether this process runs under Supervisor.
+     */
+    protected static function runsUnderSupervisor(): bool
+    {
+        $value = getenv(self::SUPERVISOR_ENV);
+
+        return is_string($value) && trim($value) !== '';
     }
 
     /**
@@ -688,6 +711,7 @@ class StartServer extends Command implements SignalableCommandInterface
             'host' => $host,
             'port' => $port,
             'path' => $path,
+            'supervised' => static::runsUnderSupervisor(),
         ]);
 
         $tmpPath = $target.'.'.getmypid().'.tmp';

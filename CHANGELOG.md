@@ -2,6 +2,12 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## v1.5.0 - 2026-11-23
+
+### Changed
+
+- **`resonate:reload` is drain-only under Supervisor.** The server records at start whether it runs under Supervisor (the `supervised` key in `resonate.json`), and reload then skips the replacement spawn and only drains, so there is no overlap and the port is briefly unserved. The Supervisor program needs `autorestart=true`, because with the default `autorestart=unexpected` a clean exit 0 after the drain is not restarted.
+
 ## v1.4.0 - 2026-11-22
 
 ### Changed

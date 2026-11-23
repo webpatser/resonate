@@ -103,13 +103,14 @@ function writeFakePidFile(int $pid): void
     file_put_contents(StartServer::pidFilePath(), (string) $pid);
 }
 
-function writeFakeRuntimeFile(int $pid, string $host = '127.0.0.1', int $port = 9123, string $path = ''): void
+function writeFakeRuntimeFile(int $pid, string $host = '127.0.0.1', int $port = 9123, string $path = '', bool $supervised = false): void
 {
     file_put_contents(StartServer::runtimeFilePath(), json_encode([
         'pid' => $pid,
         'host' => $host,
         'port' => $port,
         'path' => $path,
+        'supervised' => $supervised,
     ]));
 }
 
@@ -160,6 +161,90 @@ it('signals SIGUSR2 to the running PID in drain-only mode', function () {
 
         expect($exit)->toBe(0)
             ->and(processIsAlive($childPid))->toBeFalse();
+    } finally {
+        killHelpers($childPid);
+    }
+});
+
+/*
+ * Under Supervisor a spawned replacement runs outside it and the program goes
+ * FATAL once the old process exits, so a reload without --drain switches to
+ * drain-only when the running server recorded that Supervisor started it.
+ */
+it('switches to drain-only without spawning when the server runs under Supervisor', function () {
+    $childPid = spawnSleepProcess(30);
+    writeFakePidFile($childPid);
+    writeFakeRuntimeFile($childPid, supervised: true);
+
+    ReloadServer::$spawner = function () {
+        throw new RuntimeException('The spawner must not be called under Supervisor.');
+    };
+    ReloadServer::$probe = function () {
+        throw new RuntimeException('The probe must not be called under Supervisor.');
+    };
+
+    try {
+        $exit = Artisan::call('resonate:reload', ['--timeout' => 3]);
+
+        expect($exit)->toBe(0)
+            ->and(processIsAlive($childPid))->toBeFalse()
+            ->and(Artisan::output())->toContain('Server runs under Supervisor; switching to drain-only')
+            ->toContain("Draining Resonate server (PID: {$childPid}).");
+    } finally {
+        killHelpers($childPid);
+    }
+});
+
+it('still spawns a replacement when the server is not supervised', function () {
+    $oldPid = spawnSleepProcess(30);
+    $newPid = spawnSleepProcess(30);
+
+    writeFakePidFile($oldPid);
+    writeFakeRuntimeFile($oldPid, supervised: false);
+
+    $spawned = false;
+
+    ReloadServer::$spawner = function () use (&$spawned, $newPid) {
+        $spawned = true;
+
+        return $newPid;
+    };
+    ReloadServer::$probe = fn () => $newPid;
+
+    // The reload process's own environment must not decide it.
+    $previous = getenv(StartServer::SUPERVISOR_ENV);
+    putenv(StartServer::SUPERVISOR_ENV.'=1');
+
+    try {
+        $exit = Artisan::call('resonate:reload', ['--health-timeout' => 5, '--timeout' => 3]);
+
+        expect($exit)->toBe(0)
+            ->and($spawned)->toBeTrue()
+            ->and(processIsAlive($oldPid))->toBeFalse()
+            ->and(Artisan::output())->not->toContain('Supervisor');
+    } finally {
+        putenv($previous === false ? StartServer::SUPERVISOR_ENV : StartServer::SUPERVISOR_ENV.'='.$previous);
+
+        killHelpers($newPid, $oldPid);
+    }
+});
+
+it('does not print the switch notice when --drain is passed under Supervisor', function () {
+    $childPid = spawnSleepProcess(30);
+    writeFakePidFile($childPid);
+    writeFakeRuntimeFile($childPid, supervised: true);
+
+    ReloadServer::$spawner = function () {
+        throw new RuntimeException('The spawner must not be called with --drain.');
+    };
+
+    try {
+        $exit = Artisan::call('resonate:reload', ['--drain' => true, '--timeout' => 3]);
+
+        expect($exit)->toBe(0)
+            ->and(processIsAlive($childPid))->toBeFalse()
+            ->and(Artisan::output())->not->toContain('Supervisor')
+            ->toContain("Draining Resonate server (PID: {$childPid}).");
     } finally {
         killHelpers($childPid);
     }

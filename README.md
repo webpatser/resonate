@@ -54,6 +54,8 @@ php artisan resonate:reload --drain
 
 Tune the drain window with `REVERB_DRAIN_TIMEOUT` (default `30` seconds). Existing WebSocket clients stay connected to the old process until they disconnect naturally or the timeout fires. `--term-timeout` (default `5` seconds) bounds the wait for the old process to exit after SIGTERM; the reload fails rather than reporting success if it is still alive.
 
+Under Supervisor, `resonate:reload` automatically becomes drain-only: the server records at start whether it runs under Supervisor, and there is then no overlap, so the port is briefly unserved. The Supervisor program needs `autorestart=true`: with the default `autorestart=unexpected`, a clean exit 0 after the drain is not restarted and the server stays down.
+
 `GET /up` returns the PID of the process that answered alongside `health`, so a probe can tell the replacement apart from the outgoing server while both hold the port.
 
 ### Runtime files
@@ -63,7 +65,7 @@ Tune the drain window with `REVERB_DRAIN_TIMEOUT` (default `30` seconds). Existi
 | File | Contents |
 |------|----------|
 | `resonate.pid` | The server PID, written once the listening sockets are bound. |
-| `resonate.json` | The PID and the effective host, port and path the server was started with. |
+| `resonate.json` | The PID, the effective host, port and path the server was started with, and the `supervised` key (whether it runs under Supervisor). |
 
 `resonate:reload` reads the metadata file so a replacement inherits the CLI overrides the running server was started with, rather than falling back to config. Metadata belonging to another PID is ignored.
 
