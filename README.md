@@ -181,6 +181,24 @@ A companion Laravel-side package, **not** a Resonate plugin, that consumes the w
 
 See [`docs/plugins.md`](docs/plugins.md) for the same list with framing notes, plus a full setup walkthrough with a worked plugin you can build yourself.
 
+### OpenTelemetry metrics
+
+Resonate can report its numbers through OpenTelemetry. It is off by default and needs `open-telemetry/api` plus a meter provider bound in the container, which [`webpatser/fledge-apm`](https://github.com/webpatser/fledge-apm) does when its metrics are enabled. Both are `suggest` entries, never requirements. Set `RESONATE_OTEL_METRICS=true` (`servers.reverb.otel_metrics`) to turn it on:
+
+| Instrument | Kind, unit |
+|------------|------------|
+| `resonate.connection.count` | observable gauge, `{connection}` |
+| `resonate.channel.count` | observable gauge, `{channel}` |
+| `resonate.connection.pruned` | observable counter, `{connection}` |
+| `resonate.message.received` | observable counter, `{message}` |
+| `resonate.message.sent` | observable counter, `{message}` |
+
+`resonate.message.received` counts every valid inbound frame that reaches the plugin layer, Pusher protocol events included, also when a later plugin consumes it. `resonate.message.sent` counts one per receiving connection, so a broadcast to 500 subscribers adds 500; it includes protocol replies such as pong, `subscription_succeeded` and error frames, and excludes the error frame sent when a connection is rejected for an unknown app key. The message paths only bump an in-memory integer per app; the meter reads the totals when it collects, and the gauges read the channel manager per app at that moment. Instruments are created when the server boots its plugins, so only the `resonate:start` process reports.
+
+With several Resonate servers, each reports its own local counts under its own `service.instance.id`. Connections and frames sum across instances; a channel open on two servers counts once per server in `resonate.channel.count`.
+
+The only attribute is `resonate.app.id`; channel names, connection ids, socket ids, user ids and event names are never attributes. With the flag off, or when either dependency is missing, the plugin is not registered and the message path does no extra work.
+
 ## Requirements
 
 - PHP `^8.6`

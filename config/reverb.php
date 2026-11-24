@@ -167,6 +167,14 @@ return [
             | lifecycle, and register periodic ticks on the event loop.
             */
             'plugins' => [],
+
+            /*
+            | Export connection, channel and message metrics over OpenTelemetry.
+            | Needs open-telemetry/api and a MeterProviderInterface binding in
+            | the container (webpatser/fledge-apm provides one when its metrics
+            | are enabled). The only attribute is the app id.
+            */
+            'otel_metrics' => env('RESONATE_OTEL_METRICS', false),
         ],
 
     ],

@@ -30,6 +30,7 @@ use Webpatser\Resonate\Scaling\RedisPubSubProvider;
 use Webpatser\Resonate\Scaling\ResonateServerProvider;
 use Webpatser\Resonate\Scheduling\Scheduler;
 use Webpatser\Resonate\Server\TrustedProxies;
+use Webpatser\Resonate\Telemetry\OtelMetricsPlugin;
 
 class ResonateServiceProvider extends ServiceProvider
 {
@@ -90,6 +91,13 @@ class ResonateServiceProvider extends ServiceProvider
 
         $this->app->singleton(PluginManager::class, function ($app) {
             $manager = new PluginManager($app->make(PluginContext::class));
+
+            // Registered first so its interceptor sees every message before a
+            // plugin that consumes custom events can short-circuit the chain.
+            // With the guard off nothing is resolved and nothing is registered.
+            if (OtelMetricsPlugin::enabled()) {
+                $manager->register($app->make(OtelMetricsPlugin::class));
+            }
 
             foreach ((array) config('reverb.servers.reverb.plugins', []) as $plugin) {
                 $resolved = $app->make($plugin);

@@ -23,10 +23,16 @@
         "larastan/larastan": "^3.10",
         "laravel/pint": "^1.29",
         "laravel/pulse": "^1.0",
+        "open-telemetry/api": "^1.10",
+        "open-telemetry/sdk": "^1.17",
         "orchestra/testbench": "^11.0",
         "pestphp/pest": "^5.0",
         "phpstan/phpstan": "^2.2",
         "pusher/pusher-php-server": "^7.2"
+    },
+    "suggest": {
+        "open-telemetry/api": "Required for the opt-in OpenTelemetry metrics plugin (RESONATE_OTEL_METRICS)",
+        "webpatser/fledge-apm": "Provides the OpenTelemetry meter provider and exporter the metrics plugin reports to"
     },
     "autoload": {
         "psr-4": {
@@ -53,7 +59,9 @@
     "config": {
         "sort-packages": true,
         "allow-plugins": {
-            "pestphp/pest-plugin": true
+            "pestphp/pest-plugin": true,
+            "php-http/discovery": false,
+            "tbachert/spi": false
         }
     },
     "minimum-stability": "stable",

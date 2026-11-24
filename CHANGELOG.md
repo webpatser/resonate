@@ -2,6 +2,12 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## Unreleased
+
+### Added
+
+- **Opt-in OpenTelemetry metrics plugin.** `servers.reverb.otel_metrics` (`RESONATE_OTEL_METRICS`, default off) adds `Webpatser\Resonate\Telemetry\OtelMetricsPlugin` as the first plugin when `open-telemetry/api` is installed and a `MeterProviderInterface` is bound in the container (`webpatser/fledge-apm` binds one when its metrics are enabled). It reports `resonate.connection.count` and `resonate.channel.count` (observable gauges), and `resonate.connection.pruned`, `resonate.message.received` and `resonate.message.sent` (observable counters over per-app integers, so the message paths do no SDK work). Instruments are created when `resonate:start` boots its plugins, and it calls `Metrics::markLongRunning('resonate')` when fledge-apm is installed. The only attribute is `resonate.app.id`. With the flag off nothing is registered and the message path is untouched. Both packages are `suggest` entries, not requirements.
+
 ## v1.5.0 - 2026-11-23
 
 ### Changed
