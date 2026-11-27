@@ -1,5 +1,6 @@
 <?php
 
+use Time\Duration;
 use Webpatser\Resonate\Contracts\ApplicationProvider;
 use Webpatser\Resonate\Contracts\ServerProvider;
 use Webpatser\Resonate\Protocols\Pusher\Contracts\ChannelManager;
@@ -212,6 +213,40 @@ it('resolves at the timeout when a node never replies', function () {
         ->and($elapsed)->toBeGreaterThanOrEqual(0.25)
         ->and($elapsed)->toBeLessThan(2.0);
 });
+
+it('accepts the collection window as a Duration', function () {
+    $handler = new MetricsHandler(app(ChannelManager::class), Duration::fromMilliseconds(250));
+    app()->instance(MetricsHandler::class, $handler);
+
+    // A subscriber received the request but no sibling is wired up to answer.
+    $this->bus->receivers = 2;
+
+    openConnection('test-channel');
+
+    $startedAt = hrtime(true);
+
+    $metrics = $handler->gather($this->application, 'channel', [
+        'channel' => 'test-channel',
+        'info' => 'occupied,subscription_count',
+    ]);
+
+    $elapsed = (hrtime(true) - $startedAt) / 1e9;
+
+    expect($metrics)->toBe(['occupied' => true, 'subscription_count' => 1])
+        ->and($elapsed)->toBeGreaterThanOrEqual(0.25)
+        ->and($elapsed)->toBeLessThan(2.0);
+});
+
+it('rejects a negative collection window when the timer is armed', function (Duration|float $window) {
+    $handler = new MetricsHandler(app(ChannelManager::class), $window);
+
+    $this->bus->receivers = 2;
+
+    $handler->gather($this->application, 'channels');
+})->with([
+    'negated Duration' => fn () => Duration::fromMilliseconds(250)->negate(),
+    'negative float' => -0.25,
+])->throws(Error::class, 'Delay must be greater than or equal to zero');
 
 it('does not wait at all when no sibling received the request', function () {
     $handler = scaledMetrics(collectionWindow: 5.0);

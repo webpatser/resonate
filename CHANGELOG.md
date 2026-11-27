@@ -2,11 +2,12 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
-## Unreleased
+## v1.6.0 - 2026-11-27
 
 ### Added
 
 - **Opt-in OpenTelemetry metrics plugin.** `servers.reverb.otel_metrics` (`RESONATE_OTEL_METRICS`, default off) adds `Webpatser\Resonate\Telemetry\OtelMetricsPlugin` as the first plugin when `open-telemetry/api` is installed and a `MeterProviderInterface` is bound in the container (`webpatser/fledge-apm` binds one when its metrics are enabled). It reports `resonate.connection.count` and `resonate.channel.count` (observable gauges), and `resonate.connection.pruned`, `resonate.message.received` and `resonate.message.sent` (observable counters over per-app integers, so the message paths do no SDK work). Instruments are created when `resonate:start` boots its plugins, and it calls `Metrics::markLongRunning('resonate')` when fledge-apm is installed. The only attribute is `resonate.app.id`. With the flag off nothing is registered and the message path is untouched. Both packages are `suggest` entries, not requirements.
+- **`Time\Duration` for the metrics collection window.** `Protocols\Pusher\MetricsHandler`'s constructor accepts the collection window as a PHP 8.6 `Time\Duration` or, as before, a float in seconds; it is converted once with `Fledge\Loop\Durations::toSeconds()` and the protected `$collectionWindow` property stays a float. A negated `Duration` fails like a negative float, with the loop's `\Error` when a scaled gather arms its timer. `webpatser/fledge-loop` is raised to `^0.1.1`. `Scheduling\Scheduler::repeat()`/`delay()` keep `float`: the class is not final, so widening them would break a subclass that overrides either method.
 
 ## v1.5.0 - 2026-11-23
 

@@ -4,7 +4,9 @@ namespace Webpatser\Resonate\Protocols\Pusher;
 
 use Fledge\Async\DeferredFuture;
 use Fledge\Loop;
+use Fledge\Loop\Durations;
 use Illuminate\Support\Str;
+use Time\Duration;
 use Webpatser\Resonate\Application;
 use Webpatser\Resonate\Contracts\ServerProvider;
 use Webpatser\Resonate\Protocols\Pusher\Channels\ChannelConnection;
@@ -105,12 +107,22 @@ class MetricsHandler
     private const int MAX_MEMBER_IDS = 1000;
 
     /**
+     * Upper bound, in seconds, on the wait for sibling replies.
+     */
+    protected float $collectionWindow;
+
+    /**
      * Create an instance of the metrics handler.
      *
-     * @param  float  $collectionWindow  Upper bound, in seconds, on the wait for sibling replies.
+     * A negative window (a negated `Duration` included) is not rejected here:
+     * the loop throws its `\Error` when a scaled gather arms the timer, exactly
+     * as it does for a negative float.
+     *
+     * @param  Duration|float  $collectionWindow  Upper bound on the wait for sibling replies, as a `Duration` or in seconds.
      */
-    public function __construct(protected ChannelManager $channels, protected float $collectionWindow = 1.0)
+    public function __construct(protected ChannelManager $channels, Duration|float $collectionWindow = 1.0)
     {
+        $this->collectionWindow = Durations::toSeconds($collectionWindow);
         $this->nodeId = Str::random(20);
     }
 
