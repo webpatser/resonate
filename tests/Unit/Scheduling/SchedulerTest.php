@@ -1,6 +1,7 @@
 <?php
 
 use Fledge\Loop;
+use Time\Duration;
 use Webpatser\Resonate\Scheduling\Scheduler;
 use Webpatser\Resonate\Tests\Fakes\RecordingLogger;
 
@@ -167,3 +168,62 @@ it('runs a one-shot task once and then forgets it', function () {
     expect($runs)->toBe(1)
         ->and($this->scheduler->tasks())->toBeEmpty();
 });
+
+it('stores a Duration interval and delay as the same float as seconds', function () {
+    $this->scheduler->repeat(Duration::fromMilliseconds(1500), fn () => null, 'duration:repeat');
+    $this->scheduler->delay(Duration::fromSeconds(10), fn () => null, 'duration:delay');
+    $this->scheduler->repeat(1.5, fn () => null, 'float:repeat');
+    $this->scheduler->delay(10.0, fn () => null, 'float:delay');
+
+    [$durationRepeat, $durationDelay, $floatRepeat, $floatDelay] = $this->scheduler->tasks();
+
+    expect($durationRepeat['interval'])->toBeFloat()->toBe(1.5)->toBe($floatRepeat['interval'])
+        ->and($durationDelay['interval'])->toBeFloat()->toBe(10.0)->toBe($floatDelay['interval'])
+        ->and($durationRepeat['type'])->toBe('repeat')
+        ->and($durationDelay['type'])->toBe('delay');
+});
+
+it('runs a recurring task on a Duration interval', function () {
+    $runs = 0;
+
+    $this->scheduler->repeat(Duration::fromMilliseconds(10), function () use (&$runs): void {
+        $runs++;
+    }, 'duration:tick');
+
+    Loop::delay(0.1, static fn () => Loop::getDriver()->stop());
+    Loop::run();
+
+    expect($runs)->toBeGreaterThan(1);
+});
+
+it('runs a one-shot task after a Duration delay and then forgets it', function () {
+    $runs = 0;
+
+    $this->scheduler->delay(Duration::fromMilliseconds(10), function () use (&$runs): void {
+        $runs++;
+    }, 'duration:once');
+
+    Loop::delay(0.1, static fn () => Loop::getDriver()->stop());
+    Loop::run();
+
+    expect($runs)->toBe(1)
+        ->and($this->scheduler->tasks())->toBeEmpty();
+});
+
+it('rejects a negative interval and registers nothing', function (Duration|float $interval) {
+    expect(fn () => $this->scheduler->repeat($interval, fn () => null, 'negative'))
+        ->toThrow(Error::class, 'Interval must be greater than or equal to zero')
+        ->and($this->scheduler->tasks())->toBeEmpty();
+})->with([
+    'negative float' => -0.25,
+    'negated Duration' => fn () => Duration::fromMilliseconds(250)->negate(),
+]);
+
+it('rejects a negative delay and registers nothing', function (Duration|float $delay) {
+    expect(fn () => $this->scheduler->delay($delay, fn () => null, 'negative'))
+        ->toThrow(Error::class, 'Delay must be greater than or equal to zero')
+        ->and($this->scheduler->tasks())->toBeEmpty();
+})->with([
+    'negative float' => -0.25,
+    'negated Duration' => fn () => Duration::fromMilliseconds(250)->negate(),
+]);

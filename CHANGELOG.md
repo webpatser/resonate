@@ -2,6 +2,16 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## v1.7.0 - 2026-11-27
+
+### Added
+
+- **`Time\Duration` for scheduled tasks.** `Scheduling\Scheduler::repeat()` and `delay()` accept the interval or delay as a PHP 8.6 `Time\Duration` or, as before, a float in seconds. The value is converted once with `Fledge\Loop\Durations::toSeconds()`, so `tasks()` keeps reporting the interval as a float in seconds. A negated `Duration` fails like a negative float, with the loop's `\Error`, and nothing is registered.
+
+### Changed
+
+- **BREAKING (subclasses only): `Scheduling\Scheduler` is final.** Code that resolves, calls or binds the scheduler is unaffected; code that extends it fails. Plugins schedule through the `Plugins\Contracts\TickScheduler` interface, which is unchanged.
+
 ## v1.6.0 - 2026-11-27
 
 ### Added

@@ -4,7 +4,9 @@ namespace Webpatser\Resonate\Scheduling;
 
 use Closure;
 use Fledge\Loop;
+use Fledge\Loop\Durations;
 use Throwable;
+use Time\Duration;
 use Webpatser\Resonate\Contracts\Logger;
 
 use function Fledge\Async\async;
@@ -19,8 +21,11 @@ use function Fledge\Async\async;
  * async DB/Redis calls suspend rather than block the loop, every run is
  * exception-isolated so a throw can never cancel the timer or crash the loop,
  * and every task is named and cancellable.
+ *
+ * Intervals and delays are taken as a PHP 8.6 `Time\Duration` or a float in
+ * seconds and are stored as seconds, so {@see tasks()} always reports a float.
  */
-class Scheduler
+final class Scheduler
 {
     /**
      * The registered tasks, keyed by their loop callback id.
@@ -56,10 +61,16 @@ class Scheduler
      * because several distinct tasks legitimately share a name (every plugin
      * tick registers as `plugin:tick`), and those must not block each other.
      *
+     * A negative interval (a negated `Duration` included) throws the loop's
+     * `\Error`, and nothing is registered.
+     *
      * Returns the loop callback id, which can be passed to {@see cancel()}.
+     *
+     * @param  Duration|float  $interval  Time between runs, as a `Duration` or in seconds.
      */
-    public function repeat(float $interval, callable $callback, string $name): string
+    public function repeat(Duration|float $interval, callable $callback, string $name): string
     {
+        $interval = Durations::toSeconds($interval);
         $guard = $this->guard($name, $callback);
 
         // Captured by reference: assigned the real callback id below, before the
@@ -104,10 +115,16 @@ class Scheduler
     /**
      * Register a one-shot task to run once after the given delay.
      *
+     * A negative delay (a negated `Duration` included) throws the loop's
+     * `\Error`, and nothing is registered.
+     *
      * Returns the loop callback id, which can be passed to {@see cancel()}.
+     *
+     * @param  Duration|float  $delay  Time until the run, as a `Duration` or in seconds.
      */
-    public function delay(float $delay, callable $callback, string $name): string
+    public function delay(Duration|float $delay, callable $callback, string $name): string
     {
+        $delay = Durations::toSeconds($delay);
         $guard = $this->guard($name, $callback);
 
         // Captured by reference: assigned the real callback id below, before the
