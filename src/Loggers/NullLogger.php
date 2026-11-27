@@ -9,6 +9,7 @@ class NullLogger implements Logger
     /**
      * Log an informational message.
      */
+    #[\Override]
     public function info(string $title, ?string $message = null): void
     {
         //
@@ -17,6 +18,7 @@ class NullLogger implements Logger
     /**
      * Log an error message.
      */
+    #[\Override]
     public function error(string $message): void
     {
         //
@@ -25,6 +27,7 @@ class NullLogger implements Logger
     /**
      * Log a message sent to the server.
      */
+    #[\Override]
     public function message(string $message): void
     {
         //
@@ -33,6 +36,7 @@ class NullLogger implements Logger
     /**
      * Append a new line to the log.
      */
+    #[\Override]
     public function line(int $lines = 1): void
     {
         //

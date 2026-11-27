@@ -28,6 +28,7 @@ class CliLogger implements Logger
     /**
      * Log an informational message.
      */
+    #[\Override]
     public function info(string $title, ?string $message = null): void
     {
         $this->components->twoColumnDetail($title, $message);
@@ -36,6 +37,7 @@ class CliLogger implements Logger
     /**
      * Log an error message.
      */
+    #[\Override]
     public function error(string $message): void
     {
         $this->output->error($message);
@@ -44,6 +46,7 @@ class CliLogger implements Logger
     /**
      * Log a message sent to the server.
      */
+    #[\Override]
     public function message(string $message): void
     {
         $decoded = json_decode($message, true);
@@ -66,6 +69,7 @@ class CliLogger implements Logger
     /**
      * Append a new line to the log.
      */
+    #[\Override]
     public function line(int $lines = 1): void
     {
         $this->output->newLine($lines);

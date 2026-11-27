@@ -26,6 +26,7 @@ class HealthCheckController implements RequestHandler
     /**
      * Handle the request.
      */
+    #[\Override]
     public function handleRequest(FledgeRequest $request): FledgeResponse
     {
         return Response::json((object) [

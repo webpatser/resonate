@@ -117,6 +117,7 @@ class Router implements RequestHandler
     /**
      * Handle an incoming fledge-fiber HTTP request.
      */
+    #[\Override]
     public function handleRequest(FledgeRequest $request): FledgeResponse
     {
         $match = $this->match($request->getMethod(), $request->getUri()->getPath());

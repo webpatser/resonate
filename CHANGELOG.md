@@ -2,6 +2,14 @@
 
 All notable changes to `webpatser/resonate` are documented here.
 
+## Unreleased
+
+## v1.7.1 - 2026-11-27
+
+### Changed
+
+- **`#[\Override]` on overriding methods.** Methods that implement an interface or override a parent method now carry the attribute, so a signature drift in a parent fails at compile time. No behaviour change.
+
 ## v1.7.0 - 2026-11-27
 
 ### Added

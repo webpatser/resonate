@@ -75,6 +75,7 @@ class RawConnection implements WebSocketConnection
     /**
      * Get the raw socket connection identifier.
      */
+    #[\Override]
     public function id(): int|string
     {
         return $this->client->getId();
@@ -110,6 +111,7 @@ class RawConnection implements WebSocketConnection
      * Returns as soon as the frame is queued. Delivery order is the order of
      * these calls, whatever the socket does in between.
      */
+    #[\Override]
     public function send(mixed $message): void
     {
         if ($this->client->isClosed()) {
@@ -145,6 +147,7 @@ class RawConnection implements WebSocketConnection
      * A peer too stalled to drain its queue is closed by the overflow policy
      * instead, and the transport's own close period bounds the wait either way.
      */
+    #[\Override]
     public function close(mixed $message = null): void
     {
         if ($this->client->isClosed()) {

@@ -18,6 +18,7 @@ class CacheChannel extends Channel
      *
      * @param  array<string, mixed>  $payload
      */
+    #[\Override]
     public function broadcast(array $payload, ?Connection $except = null): void
     {
         $this->payload = $payload;
@@ -30,6 +31,7 @@ class CacheChannel extends Channel
      *
      * @param  array<string, mixed>  $payload
      */
+    #[\Override]
     public function broadcastInternally(array $payload, ?Connection $except = null): void
     {
         parent::broadcast($payload, $except);

@@ -14,6 +14,7 @@ class UsersTerminateController extends Controller
      *
      * @param  array<string, string>  $parameters
      */
+    #[\Override]
     protected function handle(Request $request, array $parameters): Response
     {
         $userId = $parameters['userId'] ?? null;

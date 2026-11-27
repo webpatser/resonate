@@ -107,6 +107,7 @@ class OtelMetricsPlugin implements MessageInterceptor, ServerPlugin
      * Create the instruments, listen for the events core has no plugin hook
      * for, and start the export cadence. Runs once, in the server process.
      */
+    #[\Override]
     public function boot(PluginContext $context): void
     {
         if ($this->booted) {
@@ -174,6 +175,7 @@ class OtelMetricsPlugin implements MessageInterceptor, ServerPlugin
     /**
      * Count the message and let it route normally.
      */
+    #[\Override]
     public function onMessage(Connection $from, array $event): MessageDisposition
     {
         $appId = $from->app()->id();

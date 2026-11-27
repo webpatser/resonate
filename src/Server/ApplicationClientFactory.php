@@ -88,6 +88,7 @@ class ApplicationClientFactory implements WebsocketClientFactory
     /**
      * Create the WebSocket client for a freshly upgraded connection.
      */
+    #[\Override]
     public function createClient(
         Request $request,
         Response $response,

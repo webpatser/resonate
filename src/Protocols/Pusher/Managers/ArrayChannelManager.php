@@ -45,6 +45,7 @@ class ArrayChannelManager implements ChannelManagerInterface
      * the constructor, so building one here would be unsafe. Subclasses that
      * need their own view type should override this method.
      */
+    #[\Override]
     public function for(Application $application): ChannelManagerInterface
     {
         return new self($this->registry, $application);
@@ -53,6 +54,7 @@ class ArrayChannelManager implements ChannelManagerInterface
     /**
      * Get the application instance.
      */
+    #[\Override]
     public function app(): ?Application
     {
         return $this->application;
@@ -79,6 +81,7 @@ class ArrayChannelManager implements ChannelManagerInterface
      *
      * @return array<string, Channel>
      */
+    #[\Override]
     public function all(): array
     {
         return $this->registry->channels($this->applicationId());
@@ -87,6 +90,7 @@ class ArrayChannelManager implements ChannelManagerInterface
     /**
      * Determine whether the given channel exists.
      */
+    #[\Override]
     public function exists(string $channel): bool
     {
         return $this->registry->has($this->applicationId(), $channel);
@@ -95,6 +99,7 @@ class ArrayChannelManager implements ChannelManagerInterface
     /**
      * Find the given channel
      */
+    #[\Override]
     public function find(string $channel): ?Channel
     {
         return $this->registry->channel($this->applicationId(), $channel);
@@ -103,6 +108,7 @@ class ArrayChannelManager implements ChannelManagerInterface
     /**
      * Find the given channel or create it if it doesn't exist.
      */
+    #[\Override]
     public function findOrCreate(string $channelName): Channel
     {
         if ($channel = $this->find($channelName)) {
@@ -123,6 +129,7 @@ class ArrayChannelManager implements ChannelManagerInterface
      *
      * @return array<string, ChannelConnection>
      */
+    #[\Override]
     public function connections(?string $channel = null): array
     {
         $channels = Arr::wrap($this->channels($channel));
@@ -146,6 +153,7 @@ class ArrayChannelManager implements ChannelManagerInterface
     /**
      * Find a single connection by socket ID.
      */
+    #[\Override]
     public function findConnection(string $socketId): ?ChannelConnection
     {
         foreach ($this->all() as $channel) {
@@ -160,6 +168,7 @@ class ArrayChannelManager implements ChannelManagerInterface
     /**
      * Register an open connection for the current application.
      */
+    #[\Override]
     public function addConnection(Connection $connection): void
     {
         $this->registry->addConnection($this->applicationId(), $connection);
@@ -168,6 +177,7 @@ class ArrayChannelManager implements ChannelManagerInterface
     /**
      * Remove an open connection from the current application.
      */
+    #[\Override]
     public function removeConnection(Connection $connection): void
     {
         $this->registry->removeConnection($this->applicationId(), $connection);
@@ -181,6 +191,7 @@ class ArrayChannelManager implements ChannelManagerInterface
      *
      * @return array<string, Connection>
      */
+    #[\Override]
     public function openConnections(): array
     {
         return $this->registry->openConnections($this->applicationId());
@@ -189,6 +200,7 @@ class ArrayChannelManager implements ChannelManagerInterface
     /**
      * Get the number of open connections for the current application.
      */
+    #[\Override]
     public function connectionCount(): int
     {
         return $this->registry->count($this->applicationId());
@@ -202,6 +214,7 @@ class ArrayChannelManager implements ChannelManagerInterface
      * channels on which unsubscribing it has any effect, so what is removed,
      * what is announced and in which order stays as it was.
      */
+    #[\Override]
     public function unsubscribeFromAll(Connection $connection): void
     {
         foreach ($this->registry->channelsToLeave($this->applicationId(), $connection->id()) as $name => $channel) {
@@ -262,6 +275,7 @@ class ArrayChannelManager implements ChannelManagerInterface
     /**
      * Remove the given channel.
      */
+    #[\Override]
     public function remove(Channel $channel): void
     {
         $this->registry->forget($this->applicationId(), $channel->name());
@@ -294,6 +308,7 @@ class ArrayChannelManager implements ChannelManagerInterface
     /**
      * Flush the channel manager repository.
      */
+    #[\Override]
     public function flush(): void
     {
         $this->registry->flush(

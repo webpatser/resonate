@@ -42,6 +42,7 @@ class ResonateServiceProvider extends ServiceProvider
      * configuration changes. The bundled stub is merged only so a fresh install
      * without the file still boots.
      */
+    #[\Override]
     public function register(): void
     {
         $this->mergeConfigFrom(

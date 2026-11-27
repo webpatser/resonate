@@ -22,6 +22,7 @@ class ChannelUsersController extends Controller
      *
      * @throws HttpException
      */
+    #[\Override]
     protected function handle(Request $request, array $parameters): Response
     {
         $name = $parameters['channel'] ?? '';

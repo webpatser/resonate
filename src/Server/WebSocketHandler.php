@@ -49,6 +49,7 @@ class WebSocketHandler implements WebsocketClientHandler
      * a Resonate connection, hand it to the Pusher server, then pump messages
      * from the client until it disconnects.
      */
+    #[\Override]
     public function handleClient(WebsocketClient $client, Request $request, Response $response): void
     {
         $appKey = $this->appKey($request);

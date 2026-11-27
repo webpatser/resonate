@@ -36,6 +36,7 @@ abstract class Controller implements RequestHandler
     /**
      * Handle an incoming fledge-fiber HTTP request.
      */
+    #[\Override]
     public function handleRequest(FledgeRequest $request): FledgeResponse
     {
         $parameters = $request->getAttribute(Router::class) ?? [];

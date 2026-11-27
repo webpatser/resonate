@@ -23,6 +23,7 @@ class ArrayChannelConnectionManager implements ChannelConnectionManager
     /**
      * Get a channel connection manager for the given channel name.
      */
+    #[\Override]
     public function for(string $name): ChannelConnectionManager
     {
         $this->name = $name;
@@ -35,6 +36,7 @@ class ArrayChannelConnectionManager implements ChannelConnectionManager
      *
      * @param  array<string, mixed>  $data
      */
+    #[\Override]
     public function add(Connection $connection, array $data): void
     {
         $this->connections[$connection->id()] = new ChannelConnection($connection, $data);
@@ -43,6 +45,7 @@ class ArrayChannelConnectionManager implements ChannelConnectionManager
     /**
      * Remove a connection.
      */
+    #[\Override]
     public function remove(Connection $connection): void
     {
         unset($this->connections[$connection->id()]);
@@ -51,6 +54,7 @@ class ArrayChannelConnectionManager implements ChannelConnectionManager
     /**
      * Find a connection.
      */
+    #[\Override]
     public function find(Connection $connection): ?ChannelConnection
     {
         return $this->findById($connection->id());
@@ -59,6 +63,7 @@ class ArrayChannelConnectionManager implements ChannelConnectionManager
     /**
      * Find a connection by its ID.
      */
+    #[\Override]
     public function findById(string $id): ?ChannelConnection
     {
         return $this->connections[$id] ?? null;
@@ -69,6 +74,7 @@ class ArrayChannelConnectionManager implements ChannelConnectionManager
      *
      * @return array<string, ChannelConnection>
      */
+    #[\Override]
     public function all(): array
     {
         return $this->connections;
@@ -77,6 +83,7 @@ class ArrayChannelConnectionManager implements ChannelConnectionManager
     /**
      * Determine whether any connections remain on the channel.
      */
+    #[\Override]
     public function isEmpty(): bool
     {
         return empty($this->connections);
@@ -85,6 +92,7 @@ class ArrayChannelConnectionManager implements ChannelConnectionManager
     /**
      * Flush the channel connection manager.
      */
+    #[\Override]
     public function flush(): void
     {
         $this->connections = [];

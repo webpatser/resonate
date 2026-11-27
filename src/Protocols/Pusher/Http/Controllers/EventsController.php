@@ -18,6 +18,7 @@ class EventsController extends Controller
      *
      * @param  array<string, string>  $parameters
      */
+    #[\Override]
     protected function handle(Request $request, array $parameters): Response
     {
         $payload = json_decode($request->getBody(), associative: true, flags: JSON_THROW_ON_ERROR);

@@ -24,6 +24,7 @@ class Message extends Component
      * @param  array<string, mixed>  $data
      * @return string
      */
+    #[\Override]
     protected function compile($view, $data)
     {
         extract($data);

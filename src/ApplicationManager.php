@@ -20,6 +20,7 @@ class ApplicationManager extends Manager
     /**
      * Get the default driver name.
      */
+    #[\Override]
     public function getDefaultDriver(): string
     {
         return $this->config->get('reverb.apps.provider', 'config');

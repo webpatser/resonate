@@ -13,6 +13,7 @@ class ConnectionsController extends Controller
      *
      * @param  array<string, string>  $parameters
      */
+    #[\Override]
     protected function handle(Request $request, array $parameters): Response
     {
         $connections = app(MetricsHandler::class)->gather($request->requireApplication(), 'connections');

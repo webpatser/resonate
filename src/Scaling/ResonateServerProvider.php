@@ -41,6 +41,7 @@ class ResonateServerProvider extends ServerProvider
     /**
      * Determine whether the server should publish events.
      */
+    #[\Override]
     public function shouldPublishEvents(): bool
     {
         return $this->publishesEvents;

@@ -44,6 +44,7 @@ class PusherPubSubIncomingMessageHandler implements PubSubIncomingMessageHandler
      * JSON decoding, application lookup, or dispatch is logged and swallowed
      * so a single bad publisher cannot wedge the subscriber.
      */
+    #[\Override]
     public function handle(string $payload): void
     {
         try {
@@ -130,6 +131,7 @@ class PusherPubSubIncomingMessageHandler implements PubSubIncomingMessageHandler
     /**
      * Listen for the given event.
      */
+    #[\Override]
     public function listen(string $event, callable $callback): void
     {
         $this->events[$event][] = $callback;
@@ -138,6 +140,7 @@ class PusherPubSubIncomingMessageHandler implements PubSubIncomingMessageHandler
     /**
      * Stop listening for the given event.
      */
+    #[\Override]
     public function stopListening(string $event): void
     {
         unset($this->events[$event]);

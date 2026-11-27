@@ -526,6 +526,7 @@ class StartServer extends Command implements SignalableCommandInterface
      *
      * @return array<int, int>
      */
+    #[\Override]
     public function getSubscribedSignals(): array
     {
         if (! windows_os()) {
@@ -556,6 +557,7 @@ class StartServer extends Command implements SignalableCommandInterface
      * happens to be executing. Doing console I/O and closing listener sockets
      * there can interleave with a partially written frame.
      */
+    #[\Override]
     public function handleSignal(int $signal = 0, int|false $previousExitCode = 0): int|false
     {
         if (defined('SIGUSR2') && $signal === SIGUSR2) {

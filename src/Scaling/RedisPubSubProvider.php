@@ -114,6 +114,7 @@ class RedisPubSubProvider implements PubSubProvider
     /**
      * Connect the publisher and subscriber to Redis.
      */
+    #[\Override]
     public function connect(): void
     {
         // Calling connect() twice would otherwise strand the previous
@@ -136,6 +137,7 @@ class RedisPubSubProvider implements PubSubProvider
     /**
      * Disconnect from Redis.
      */
+    #[\Override]
     public function disconnect(): void
     {
         $this->stopped = true;
@@ -161,6 +163,7 @@ class RedisPubSubProvider implements PubSubProvider
      * Runs until disconnect(), resubscribing with exponential backoff whenever
      * the connection drops.
      */
+    #[\Override]
     public function subscribe(): void
     {
         $this->listener = async(function (): void {
@@ -282,6 +285,7 @@ class RedisPubSubProvider implements PubSubProvider
     /**
      * Listen for the given event.
      */
+    #[\Override]
     public function on(string $event, callable $callback): void
     {
         $this->messageHandler->listen($event, $callback);
@@ -292,6 +296,7 @@ class RedisPubSubProvider implements PubSubProvider
      *
      * @alias on
      */
+    #[\Override]
     public function listen(string $event, callable $callback): void
     {
         $this->on($event, $callback);
@@ -300,6 +305,7 @@ class RedisPubSubProvider implements PubSubProvider
     /**
      * Stop listening for the given event.
      */
+    #[\Override]
     public function stopListening(string $event): void
     {
         $this->messageHandler->stopListening($event);
@@ -325,6 +331,7 @@ class RedisPubSubProvider implements PubSubProvider
      * @param  array<string, mixed>  $payload
      * @return int<0, max>
      */
+    #[\Override]
     public function publish(array $payload): int
     {
         if ($this->publisher === null) {

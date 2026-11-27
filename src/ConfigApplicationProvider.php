@@ -23,6 +23,7 @@ class ConfigApplicationProvider implements ApplicationProvider
      *
      * @return Collection<array-key, Application>
      */
+    #[\Override]
     public function all(): Collection
     {
         return $this->applications->map(function ($app) {
@@ -35,6 +36,7 @@ class ConfigApplicationProvider implements ApplicationProvider
      *
      * @throws InvalidApplication
      */
+    #[\Override]
     public function findById(string $id): Application
     {
         return $this->find('app_id', $id);
@@ -45,6 +47,7 @@ class ConfigApplicationProvider implements ApplicationProvider
      *
      * @throws InvalidApplication
      */
+    #[\Override]
     public function findByKey(string $key): Application
     {
         return $this->find('key', $key);

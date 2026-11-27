@@ -13,6 +13,7 @@ class ChannelsController extends Controller
      *
      * @param  array<string, string>  $parameters
      */
+    #[\Override]
     protected function handle(Request $request, array $parameters): Response
     {
         $query = $request->query();
